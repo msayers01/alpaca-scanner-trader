@@ -50,6 +50,9 @@ export function EquityCurveChart({ equity, benchmark, height = 320 }: { equity: 
     eq.setData(clean(equity));
     chart.timeScale().fitContent();
     return () => {
+      // On unmount React runs the chart-creation cleanup (chart.remove()) before this one; removing series
+      // from a destroyed chart throws "Value is undefined". Only detach series while the chart is alive.
+      if (chartRef.current !== chart) return;
       chart.removeSeries(bench);
       chart.removeSeries(eq);
     };

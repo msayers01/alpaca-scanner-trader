@@ -1,6 +1,7 @@
 import { lazy } from "react";
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom";
 import { Layout } from "./components/Layout";
+import { RouteError } from "./components/RouteError";
 import { useUiStore } from "./store/ui";
 import Dashboard from "./pages/Dashboard";
 
@@ -25,20 +26,27 @@ const router = createBrowserRouter([
   {
     path: "/",
     element: <Layout />,
+    errorElement: <RouteError inShell={false} />,
     children: [
-      { index: true, element: <Dashboard /> },
-      { path: "symbol", element: <SymbolIndex /> },
-      { path: "symbol/:sym", element: <SymbolPage /> },
-      { path: "scanner", element: <Scanner /> },
-      { path: "feeds", element: <Feeds /> },
-      { path: "feeds/:tab", element: <Feeds /> },
-      { path: "autotrader", element: <AutoTrader /> },
-      { path: "calendar", element: <CalendarPage /> },
-      { path: "backtest", element: <Backtest /> },
-      { path: "llm", element: <LlmLog /> },
-      { path: "settings", element: <Settings /> },
-      { path: "help", element: <Help /> },
-      { path: "*", element: <NotFound /> },
+      {
+        // Pathless wrapper: page errors render inside the layout, so the sidebar stays usable.
+        errorElement: <RouteError />,
+        children: [
+          { index: true, element: <Dashboard /> },
+          { path: "symbol", element: <SymbolIndex /> },
+          { path: "symbol/:sym", element: <SymbolPage /> },
+          { path: "scanner", element: <Scanner /> },
+          { path: "feeds", element: <Feeds /> },
+          { path: "feeds/:tab", element: <Feeds /> },
+          { path: "autotrader", element: <AutoTrader /> },
+          { path: "calendar", element: <CalendarPage /> },
+          { path: "backtest", element: <Backtest /> },
+          { path: "llm", element: <LlmLog /> },
+          { path: "settings", element: <Settings /> },
+          { path: "help", element: <Help /> },
+          { path: "*", element: <NotFound /> },
+        ],
+      },
     ],
   },
 ]);
