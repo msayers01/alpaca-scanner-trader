@@ -13,7 +13,7 @@ from datetime import date
 from typing import Any
 
 from vantage.core import clock
-from vantage.core.types import ParamSpec, TradeIdea, apply_params
+from vantage.core.types import ParamSpec, TradeIdea, apply_params, parse_occ
 
 RISK_SCHEMA: list[ParamSpec] = [
     ParamSpec("kelly_multiplier", "float", 0.25, "Kelly multiplier (κ)", "Fraction of full Kelly to bet. 0.25 = quarter Kelly.",
@@ -118,6 +118,12 @@ def can_close_same_day(account: dict[str, Any], policy: str, broker_pdt: bool = 
     return broker_pdt and policy != "never" and account.get("daytrade_count", 0) < 3
 
 
+def _underlying_of(symbol: str) -> str:
+    """Underlying ticker of an equity or OCC option symbol (exact — never a string prefix: 'F' must not match 'FDX')."""
+    occ = parse_occ(symbol)
+    return occ[0] if occ else symbol
+
+
 class RiskManager:
     def __init__(self, cfg: dict[str, Any] | None = None, mode: str = "sim"):
         self.cfg = apply_params(RISK_SCHEMA, cfg)
@@ -193,7 +199,7 @@ class RiskManager:
         if n_open >= c["max_open_positions"]:
             return None, f"max open positions {c['max_open_positions']} reached"
         same_und = sum(1 for p in positions if p.get("underlying") == idea.underlying)
-        same_und += sum(1 for s in pending_symbols if s.startswith(idea.underlying))
+        same_und += sum(1 for s in pending_symbols if _underlying_of(s) == idea.underlying)
         if same_und >= c["max_per_underlying"]:
             return None, f"max positions per underlying ({c['max_per_underlying']}) reached for {idea.underlying}"
         if idea.edge_score < c["min_edge_score"]:

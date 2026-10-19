@@ -95,8 +95,21 @@ def _extract_json(text: str) -> dict[str, Any] | None:
     return None
 
 
+def _is_number(v: Any) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
 def _validate(data: dict[str, Any], schema: dict[str, Any]) -> str | None:
-    """Minimal JSON-schema check (required keys, enums, number bounds) — enough to reject garbage."""
+    """Minimal JSON-schema check — enough to reject garbage and to clamp what the models rely on.
+
+    Top level: required keys, enums, types; numbers are clamped to min/max. Arrays of objects are validated item by item:
+    items that miss a required key or carry a wrong type are *dropped* (one malformed row must not discard — or crash the
+    consumer of — an otherwise good reply), and nested numbers are clamped the same way.
+    """
+    return _check_object(data, schema, top=True)
+
+
+def _check_object(data: dict[str, Any], schema: dict[str, Any], top: bool) -> str | None:
     for k in schema.get("required", []):
         if k not in data:
             return f"missing key {k}"
@@ -107,15 +120,27 @@ def _validate(data: dict[str, Any], schema: dict[str, Any]) -> str | None:
         t = spec.get("type")
         if "enum" in spec and v not in spec["enum"]:
             return f"{k}={v!r} not in enum"
-        if t == "number" and not isinstance(v, (int, float)):
-            return f"{k} not a number"
         if t == "number":
+            if not _is_number(v):
+                return f"{k} not a number"
             if "minimum" in spec and v < spec["minimum"]:
                 data[k] = spec["minimum"]
             if "maximum" in spec and v > spec["maximum"]:
                 data[k] = spec["maximum"]
-        if t == "array" and not isinstance(v, list):
-            return f"{k} not an array"
+        elif t == "boolean" and not isinstance(v, bool):
+            return f"{k} not a boolean"
+        elif t == "string" and not isinstance(v, str):
+            return f"{k} not a string"
+        elif t == "array":
+            if not isinstance(v, list):
+                return f"{k} not an array"
+            item_spec = spec.get("items") or {}
+            if item_spec.get("type") == "object":
+                kept = []
+                for it in v:
+                    if isinstance(it, dict) and _check_object(it, item_spec, top=False) is None:
+                        kept.append(it)
+                data[k] = kept
     return None
 
 

@@ -114,6 +114,7 @@ export function SignalPanel({ symbol }: { symbol: string }) {
         ) : rows.length === 0 ? (
           <Empty>No signals for {sym}.</Empty>
         ) : (
+          <div className="table-wrap">
           <table className="tbl compact">
             <thead>
               <tr>
@@ -143,6 +144,7 @@ export function SignalPanel({ symbol }: { symbol: string }) {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

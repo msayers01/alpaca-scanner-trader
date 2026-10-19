@@ -47,6 +47,15 @@ class RateLimiter:
                 await asyncio.sleep((1 - self.tokens) / self.rate)
 
 
+def fmt_price(px: float) -> str:
+    """Limit-price string: whole cents for prices >= $1 and for any price that is a whole number of cents (options), up to
+    4 decimals for sub-dollar stocks (Alpaca accepts sub-penny increments below $1)."""
+    if px >= 1.0:
+        return f"{px:.2f}"
+    s = f"{px:.4f}".rstrip("0")
+    return s if len(s.split(".")[1]) >= 2 else f"{px:.2f}"
+
+
 def _iso(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, tz=UTC).isoformat().replace("+00:00", "Z")
 
@@ -230,8 +239,7 @@ class AlpacaREST:
             q = float(req["qty"])
             body["qty"] = str(int(q)) if q == int(q) else f"{q:.6f}"
         if req.get("limit_price") is not None:
-            lp = float(req["limit_price"])
-            body["limit_price"] = f"{lp:.2f}" if lp >= 1 or req.get("asset_class") == "option" else f"{lp:.4f}"
+            body["limit_price"] = fmt_price(float(req["limit_price"]))
         if req.get("stop_price") is not None:
             body["stop_price"] = f"{float(req['stop_price']):.2f}"
         if req.get("extended_hours"):
@@ -242,14 +250,31 @@ class AlpacaREST:
                 body["stop_loss"] = {"stop_price": f"{float(req['stop_loss']):.2f}"}
             if req.get("take_profit"):
                 body["take_profit"] = {"limit_price": f"{float(req['take_profit']):.2f}"}
-        return normalize_order(await self._t("POST", "/v2/orders", json=body))
+        try:
+            return normalize_order(await self._t("POST", "/v2/orders", json=body))
+        except BrokerError as e:
+            # _req retries transport errors / 5xx. If an earlier attempt actually reached Alpaca, the retry is refused as a
+            # duplicate client_order_id — but the order is live. Adopt it instead of reporting a failure, otherwise it would
+            # fill untracked (no strategy attribution, no software stop).
+            if e.status in (None, 422, 500, 502, 503, 504) or "client_order_id" in str(e).lower():
+                found = await self._order_by_client_id(body["client_order_id"])
+                if found is not None:
+                    log.warning("order %s was accepted despite error (%s); adopting it", body["client_order_id"], e)
+                    return found
+            raise
+
+    async def _order_by_client_id(self, client_order_id: str) -> dict[str, Any] | None:
+        try:
+            return normalize_order(await self._t("GET", "/v2/orders:by_client_order_id", params={"client_order_id": client_order_id}))
+        except BrokerError:
+            return None
 
     async def replace_order(
         self, order_id: str, limit_price: float | None = None, qty: float | None = None
     ) -> dict[str, Any]:
         body: dict[str, Any] = {}
         if limit_price is not None:
-            body["limit_price"] = f"{limit_price:.2f}"
+            body["limit_price"] = fmt_price(limit_price)
         if qty is not None:
             body["qty"] = str(int(qty)) if qty == int(qty) else f"{qty:.6f}"
         return normalize_order(await self._t("PATCH", f"/v2/orders/{order_id}", json=body))

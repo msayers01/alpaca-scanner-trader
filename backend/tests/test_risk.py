@@ -141,3 +141,16 @@ def test_llm_multiplier_only_shrinks():
     c.size_multiplier = 0.1
     pc, _ = rm.size_and_check(c, account(100_000), [], set(), MS)
     assert pc.qty <= pa.qty
+
+
+def test_per_underlying_cap_matches_exact_underlying_not_string_prefix():
+    # a working AMD entry must not count against 'A' (or any ticker that merely shares a prefix)
+    rm = RiskManager({"max_per_underlying": 1, "max_open_positions": 10}, "paper")
+    idea = opt_idea()
+    idea.underlying = "A"
+    plan, why = rm.size_and_check(idea, account(), [], {"AMD261120C00100000", "AAPL"}, MS)
+    assert plan is not None, why
+    # ...but a working order on the very same underlying (equity or option) does count
+    for pending in ({"A"}, {"A261120C00100000"}):
+        plan, why = rm.size_and_check(idea, account(), [], pending, MS)
+        assert plan is None and "per underlying" in why

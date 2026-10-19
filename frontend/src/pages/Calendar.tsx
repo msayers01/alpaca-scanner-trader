@@ -111,7 +111,7 @@ function AddEventForm({ date, onAdded }: { date: string; onAdded: (e: CalEvent) 
           <input className="input input-sm" value={form.symbol} onChange={(e) => setForm((f) => ({ ...f, symbol: e.target.value }))} placeholder="AAPL" />
         </label>
       </div>
-      <div className="row">
+      <div className="row-wrap">
         <span className="label">Importance</span>
         <div className="seg" role="group" aria-label="Importance">
           {([1, 2, 3] as const).map((i) => (

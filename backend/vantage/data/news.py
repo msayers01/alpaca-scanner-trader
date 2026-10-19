@@ -65,7 +65,7 @@ class NewsService:
         self.llm = llm
         self.items: deque[NewsItem] = deque(maxlen=2000)
         self._seen: set[str] = set()
-        self.by_symbol: dict[str, deque[tuple[int, float]]] = defaultdict(lambda: deque(maxlen=200))
+        self.by_symbol: dict[str, deque[tuple[int, float, str]]] = defaultdict(lambda: deque(maxlen=200))  # (t, score, item id)
         self.llm_symbols: set[str] = set()  # tickers worth spending LLM time on
         self._sub = bus.subscribe("news.raw", maxsize=0)
         self._q: asyncio.Queue[NewsItem] = asyncio.Queue(maxsize=200)
@@ -132,7 +132,7 @@ class NewsService:
             per = n.llm["per_symbol"]
         for s in n.symbols:
             v = per.get(s, weight)
-            self.by_symbol[s].append((n.t, float(v)))
+            self.by_symbol[s].append((n.t, float(v), n.id))
 
     def _persist(self, n: NewsItem) -> None:
         self.store.write(
@@ -143,48 +143,56 @@ class NewsService:
     async def _enrich_loop(self) -> None:
         while True:
             n = await self._q.get()
-            if now_ms() - n.t > 6 * 3600_000:
-                continue
-            assert self.llm is not None
-            res = await self.llm.complete_json(
-                "news",
-                prompts.NEWS_SYSTEM,
-                prompts.news_user(n.headline, n.summary, n.symbols),
-                prompts.NEWS_SCHEMA,
-                cache_ttl_s=3600,
-                max_tokens=500,
-            )
-            if not res.ok or not res.data:
-                continue
-            items = [i for i in res.data.get("items", []) if i.get("symbol") in n.symbols]
-            if not items:
-                continue
-            per = {
-                i["symbol"]: float(i["direction"]) * float(i["magnitude"]) * float(i["relevance"])
-                * (0.3 + 0.7 * float(i.get("novelty", 1)))
-                for i in items
-            }
-            top = max(items, key=lambda i: i["relevance"])
-            n.llm = {
-                "direction": top["direction"],
-                "magnitude": top["magnitude"],
-                "horizon": top.get("horizon", "days"),
-                "rationale": top.get("rationale", ""),
-                "per_symbol": per,
-                "latency_ms": res.latency_ms,
-            }
-            n.sentiment = round(float(top["direction"]) * float(top["magnitude"]), 3)
-            n.relevance = round(float(top["relevance"]), 3)
-            # replace lexicon entries for this item with LLM ones
-            for s in n.symbols:
-                dq = self.by_symbol[s]
-                kept = [(t, v) for (t, v) in dq if t != n.t]
-                dq.clear()
-                dq.extend(kept)
-                if s in per:
-                    dq.append((n.t, per[s]))
-            self._persist(n)
-            self.bus.publish("news", n)
+            try:
+                await self._enrich(n)
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001 - a malformed LLM reply must never end news enrichment for the session
+                log.exception("news enrichment failed for %s", n.id)
+
+    async def _enrich(self, n: NewsItem) -> None:
+        if now_ms() - n.t > 6 * 3600_000:
+            return
+        assert self.llm is not None
+        res = await self.llm.complete_json(
+            "news",
+            prompts.NEWS_SYSTEM,
+            prompts.news_user(n.headline, n.summary, n.symbols),
+            prompts.NEWS_SCHEMA,
+            cache_ttl_s=3600,
+            max_tokens=500,
+        )
+        if not res.ok or not res.data:
+            return
+        items = [i for i in res.data.get("items", []) if i.get("symbol") in n.symbols]
+        if not items:
+            return
+        per = {
+            i["symbol"]: float(i["direction"]) * float(i["magnitude"]) * float(i["relevance"])
+            * (0.3 + 0.7 * float(i.get("novelty", 1)))
+            for i in items
+        }
+        top = max(items, key=lambda i: i["relevance"])
+        n.llm = {
+            "direction": top["direction"],
+            "magnitude": top["magnitude"],
+            "horizon": top.get("horizon", "days"),
+            "rationale": top.get("rationale", ""),
+            "per_symbol": per,
+            "latency_ms": res.latency_ms,
+        }
+        n.sentiment = round(float(top["direction"]) * float(top["magnitude"]), 3)
+        n.relevance = round(float(top["relevance"]), 3)
+        # replace the lexicon entry of THIS item (by id — two items can share a millisecond) with the LLM one
+        for s in n.symbols:
+            dq = self.by_symbol[s]
+            kept = [e for e in dq if e[2] != n.id]
+            dq.clear()
+            dq.extend(kept)
+            if s in per:
+                dq.append((n.t, per[s], n.id))
+        self._persist(n)
+        self.bus.publish("news", n)
 
     # ------------------------------------------------------------------ queries
     def recent(self, symbol: str | None = None, limit: int = 100) -> list[NewsItem]:
@@ -202,7 +210,7 @@ class NewsService:
         lam = math.log(2) / (half_life_h * 3600_000)
         tot = 0.0
         n = 0
-        for t, v in self.by_symbol.get(symbol, ()):
+        for t, v, _ in self.by_symbol.get(symbol, ()):
             age = now - t
             if age < 0 or age > 3 * half_life_h * 3600_000:
                 continue

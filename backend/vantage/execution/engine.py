@@ -78,6 +78,7 @@ class ExecutionEngine:
 
     async def start(self) -> None:
         self._tasks.append(asyncio.create_task(self._events(), name="exec-events"))
+        self._tasks.append(asyncio.create_task(self._reconcile_loop(), name="exec-reconcile"))
 
     async def stop(self) -> None:
         self._sub.close()
@@ -110,6 +111,7 @@ class ExecutionEngine:
         meta: dict[str, Any] | None = None,
         ref_price: float | None = None,
     ) -> WorkingOrder:
+        self._prune()
         w = WorkingOrder(new_id("vt-"), symbol, side, qty, notional, is_option, purpose, strategy_id,
                          1.0 if urgent else aggression, max(aggression, max_aggression), timeout_s, meta=meta or {})
         self.working[w.client_id] = w
@@ -179,9 +181,8 @@ class ExecutionEngine:
                     return
                 age = (now_ms() - w.created) / 1000
                 if age >= w.timeout_s:
-                    with contextlib.suppress(BrokerError):
-                        await self.broker.cancel_order(w.broker_id or "")
                     w.meta["timeout"] = True
+                    await self._cancel_and_reconcile(w)
                     return
                 if w.aggression >= w.max_aggression:
                     continue
@@ -200,6 +201,75 @@ class ExecutionEngine:
                 w.limit = px
         except asyncio.CancelledError:
             pass
+
+    async def _cancel_and_reconcile(self, w: WorkingOrder, attempts: int = 3, wait_s: float = 6.0) -> None:
+        """Cancel a timed-out order and make sure its status ends up terminal.
+
+        The broker normally confirms with a cancel event. If that event is lost (stream hiccup) or the cancel raced a fill,
+        a status stuck on "working" would block the instrument forever (no new entries, and ``is_working`` suppresses exit
+        management of the position). So: ask the broker what really happened and adopt it.
+        """
+        for _ in range(attempts):
+            with contextlib.suppress(BrokerError):
+                await self.broker.cancel_order(w.broker_id or "")
+            try:
+                await asyncio.wait_for(w.done.wait(), wait_s)
+                return
+            except TimeoutError:
+                pass
+            try:
+                o = await self.broker.get_order(w.broker_id or "")
+            except BrokerError as e:
+                log.info("reconcile get_order failed for %s: %s", w.symbol, e)
+                continue
+            if await self._apply_broker_state(w, o):
+                return
+        log.warning("order %s (%s) still open after %d cancel attempts; releasing it locally", w.client_id, w.symbol, attempts)
+        w.meta["reconcile_failed"] = True
+        w.status = "expired"
+        w.done.set()
+
+    async def _apply_broker_state(self, w: WorkingOrder, o: dict[str, Any]) -> bool:
+        """Adopt a terminal order state fetched from the broker; False while the order is still open there."""
+        st = str(o.get("status", "")).lower()
+        if st == "filled":
+            await self._handle_fill(w, o)
+            return True
+        if st in ("canceled", "cancelled", "expired", "rejected", "done_for_day"):
+            w.status = "canceled" if st == "cancelled" else st
+            w.filled_qty = float(o.get("filled_qty") or w.filled_qty or 0)
+            if w.filled_qty > 0:
+                w.avg_price = o.get("filled_avg_price") or w.avg_price
+                await self._notify(w, o)
+            w.done.set()
+            return True
+        return False
+
+    async def _reconcile_loop(self, every_s: float = 15.0, stale_s: float = 20.0) -> None:
+        """Safety net for lost trade-update events (the stream reconnects but does not replay): poll the broker for orders
+        that have looked 'working' for a while. Without it a missed fill leaves the instrument blocked and — for market
+        exits, which have no timeout task — a position the software would never manage again."""
+        while True:
+            await asyncio.sleep(every_s)
+            stale = [w for w in list(self.working.values())
+                     if w.status in ("pending", "working") and w.broker_id and (now_ms() - w.created) / 1000 >= stale_s]
+            for w in stale[:5]:
+                try:
+                    await self._apply_broker_state(w, await self.broker.get_order(w.broker_id or ""))
+                except BrokerError as e:
+                    log.debug("reconcile of %s failed: %s", w.symbol, e)
+                except Exception:  # noqa: BLE001
+                    log.exception("reconcile loop error")
+
+    def _prune(self, keep_s: float = 1800.0, limit: int = 200) -> None:
+        """Forget finished orders so ``working`` (scanned by is_working/pending_symbols every cycle) stays small."""
+        if len(self.working) <= limit:
+            return
+        cutoff = now_ms() - int(keep_s * 1000)
+        for cid in [c for c, w in self.working.items() if w.status not in ("pending", "working") and w.created < cutoff]:
+            w = self.working.pop(cid)
+            if w.broker_id:
+                self._by_broker.pop(w.broker_id, None)
 
     async def cancel_all(self, purpose: str | None = None) -> None:
         for w in list(self.working.values()):

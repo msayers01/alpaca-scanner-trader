@@ -804,7 +804,7 @@ kbd {
 }
 .param-cols {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(380px, 100%), 1fr));
   gap: var(--sp-5) var(--sp-8);
   align-items: start;
 }
@@ -1060,6 +1060,11 @@ kbd {
   gap: var(--sp-4);
   border-bottom: 1px solid var(--border);
   margin-bottom: var(--sp-4);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar {
+  display: none;
 }
 .tab {
   position: relative;
@@ -1074,6 +1079,8 @@ kbd {
   display: inline-flex;
   gap: 6px;
   align-items: center;
+  white-space: nowrap;
+  flex: none;
 }
 .tab:hover {
   color: var(--text);
@@ -2294,4 +2301,11 @@ kbd {
   font-size: var(--fs-xl, 22px);
   font-weight: var(--fw-semibold);
   font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 720px) {
+  .help-content .tbl {
+    display: block;
+    overflow-x: auto;
+  }
 }
