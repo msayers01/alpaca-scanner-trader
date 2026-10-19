@@ -38,6 +38,8 @@ class AutoTrader:
         self.bus: Bus = c.bus
         self.exec: ExecutionEngine = c.execution
         saved_risk = self.store.kv_get(self.mode, "risk_config")
+        # until the user customises anything, adopt the preset of the tier detected from live equity
+        self._adopt_tier_preset = saved_risk is None and not self.store.kv_get(self.mode, "strategies")
         self.risk = RiskManager(saved_risk, self.mode)
         self.tier: str = self.store.kv_get(self.mode, "tier") or "small"
         self.tier_locked: bool = bool(self.store.kv_get(self.mode, "tier_locked", False))
@@ -171,6 +173,12 @@ class AutoTrader:
             self.store.kv_set(self.mode, "peak_equity", eq)
         if not self.tier_locked:
             self.tier = tier_for_equity(eq)
+        if self._adopt_tier_preset:
+            self._adopt_tier_preset = False
+            self.apply_preset(self.tier)
+            self.tier_locked = False
+            self.store.kv_set(self.mode, "tier_locked", False)
+            self._decide("system", "-", "skip", f"adopted '{self.tier}' tier preset for equity ${eq:,.0f}")
         account["tier"] = self.tier
         if not self.risk.killed:
             reason = self.risk.check_kill(account, self.peak_equity)

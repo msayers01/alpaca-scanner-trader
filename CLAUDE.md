@@ -72,6 +72,12 @@ Production-style single server: `npm run build` then `uv run vantage` serves `fr
 ## Gotchas
 - Alpaca options stream is **msgpack only**; quotes can't use `*` wildcard (error 413).
 - Free data = IEX + `indicative` options (delayed trades). Flow analytics fall back to snapshots.
+- Free IEX stream: quotes + trades together are capped at ~30 symbols per connection (error `405 symbol limit
+  exceeded`); bars/updatedBars are effectively unlimited; free plans allow ONE data-stream connection.
+  `MarketDataService` streams bars for everything, gives the 30 quote slots to UI-viewed symbols first, skips
+  trades on IEX and REST-polls snapshots every 10 s for the rest (polled quotes have zero sizes so OFI ignores them).
+- Portfolio history: `period=1M` is > 30 days and rejects intraday timeframes (use `30D`); `start` without
+  `end` defaults to a 1-month window (always send both for YTD).
 - Options orders: `day` TIF, whole contracts, no extended hours, no broker-side brackets
   (exits are software-managed in `autotrader/`).
 - Portfolio history `period` > 30 days only supports `1D` timeframe.

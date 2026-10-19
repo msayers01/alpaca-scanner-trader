@@ -137,7 +137,7 @@ class Hub:
         stocks = [ch.split(":", 1)[1] for ch in chans if ch.startswith(("quote:", "bar:"))]
         opts = [ch.split(":", 1)[1] for ch in chans if ch.startswith("oquote:")]
         if stocks:
-            await c.market.acquire(stocks)
+            await c.market.acquire(stocks, "ui")
         if opts:
             with contextlib.suppress(Exception):
                 await c.broker.options_subscribe(quotes=opts)
@@ -149,7 +149,7 @@ class Hub:
         stocks = [ch.split(":", 1)[1] for ch in chans if ch.startswith(("quote:", "bar:"))]
         opts = [ch.split(":", 1)[1] for ch in chans if ch.startswith("oquote:")]
         if stocks:
-            await c.market.release(stocks)
+            await c.market.release(stocks, "ui")
         if opts:
             still = {ch for cl in self.clients for ch in cl.channels}
             gone = [o for o in opts if f"oquote:{o}" not in still]

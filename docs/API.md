@@ -254,6 +254,9 @@ interface BacktestResult { strategy_id: string; equity: { t: number; v: number }
 Extra fields the backend also returns:
 - `Status.error` (last account-poll error or null), `Status.mode_error` (why a requested mode failed to start; the
   backend falls back to SIM), `Status.feeds.errors` (per-stream last error).
+- `PortfolioHistory.points` always end at live equity (paper/live). For 1D, if the broker's bars are from an
+  earlier ET date (weekend / overnight session), `base_value` = the account's `last_equity`, so the chart's
+  "Today" change equals `Account.day_pl`.
 - `PortfolioHistory.day_bounds` (1D only): `{start, end}` — the full session window (04:00–20:00 ET live; the sim
   "day") to pad the x-axis; `session_bounds` = regular hours.
 - `AutoTraderState.preview` (bool; when disarmed, would-be entries are logged as `skip` decisions prefixed

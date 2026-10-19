@@ -269,11 +269,11 @@ class AlpacaREST:
         elif rng == "1W":
             cfg = {"period": "1W", "timeframe": "15Min", "intraday_reporting": "market_hours", "pnl_reset": "no_reset"}
         elif rng == "1M":
-            cfg = {"period": "1M", "timeframe": "1H", "intraday_reporting": "market_hours", "pnl_reset": "no_reset"}
+            cfg = {"period": "30D", "timeframe": "1H", "intraday_reporting": "market_hours", "pnl_reset": "no_reset"}
         elif rng == "3M":
             cfg = {"period": "3M", "timeframe": "1D"}
         elif rng == "YTD":
-            cfg = {"start": date(today.year, 1, 1).isoformat(), "timeframe": "1D"}
+            cfg = {"start": date(today.year, 1, 1).isoformat(), "end": today.isoformat(), "timeframe": "1D"}
         elif rng == "1Y":
             cfg = {"period": "1A", "timeframe": "1D"}
         else:

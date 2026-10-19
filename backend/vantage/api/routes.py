@@ -232,7 +232,35 @@ async def portfolio_history(request: Request, range: str = Query("1D")) -> JSON:
             h["session_bounds"] = {"open": o, "close": cl}
             h["day_bounds"] = {"start": clock.to_ms(clock.et_dt(d, clock.PRE_OPEN)),
                                "end": clock.to_ms(clock.et_dt(d, clock.POST_CLOSE))}
+    if c.mode != "sim":
+        _append_live_equity(h, c.account or await c.broker.get_account(), range)
     return J(h)
+
+
+def _append_live_equity(h: dict[str, Any], acct: dict[str, Any], rng: str) -> None:
+    """End every range at live equity (overnight/extended sessions move it past the broker's last bar).
+
+    For 1D, if the broker's history is from an earlier ET date (weekend/overnight), the baseline becomes the
+    previous close (`last_equity`) so the chart's "Today" change matches the account's day P&L.
+    """
+    from datetime import datetime
+
+    pts = h.get("points") or []
+    now = now_ms()
+    eq = float(acct.get("equity") or 0.0)
+    if eq <= 0:
+        return
+    if rng == "1D" and pts:
+        last_d = datetime.fromtimestamp(pts[-1]["t"] / 1000, tz=clock.ET).date()
+        if last_d < clock.today_et() and acct.get("last_equity"):
+            h["base_value"] = float(acct["last_equity"])
+            if h.get("day_bounds"):
+                h["day_bounds"]["end"] = max(h["day_bounds"]["end"], now)
+    if not pts or now - pts[-1]["t"] > 60_000:
+        pts.append({"t": now, "v": round(eq, 2)})
+    else:
+        pts[-1]["v"] = round(eq, 2)
+    h["points"] = pts
 
 
 @router.get("/journal")

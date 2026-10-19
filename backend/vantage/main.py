@@ -54,6 +54,7 @@ def create_app(settings: Settings | None = None, state: AppState | None = None, 
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        _quiet_windows_resets()
         vs = state or AppState(settings)
         app.state.vs = vs
         hub = Hub(vs.bus, lambda: vs.container)
@@ -107,6 +108,24 @@ def create_app(settings: Settings | None = None, state: AppState | None = None, 
             return FileResponse(index)
 
     return app
+
+
+def _quiet_windows_resets() -> None:
+    """Browsers closing sockets make the Windows proactor log ConnectionResetError tracebacks; ignore those."""
+    import asyncio
+
+    loop = asyncio.get_running_loop()
+    default = loop.get_exception_handler()
+
+    def handler(lp: asyncio.AbstractEventLoop, ctx: dict) -> None:  # type: ignore[type-arg]
+        if isinstance(ctx.get("exception"), ConnectionResetError):
+            return
+        if default:
+            default(lp, ctx)
+        else:
+            lp.default_exception_handler(ctx)
+
+    loop.set_exception_handler(handler)
 
 
 def run() -> None:
