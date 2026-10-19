@@ -199,3 +199,12 @@ backtest `StrategyContext`. Fills at next bar open + slippage (bps) + commission
 priced synthetically with BSM using a rolling HAR-RV vol × an IV/RV ratio parameter (approximation
 flagged in `notes`). Reported: CAGR, Sharpe, Sortino, MaxDD, Calmar, win rate, profit factor,
 exposure, PSR(0), DSR (with `n_trials` = number of parameter sets the user has tried, tracked).
+
+Sizing modes: `equal_weight` (default) gives each symbol 1/N of equity in shares (options: up to
+min(1/N, 20 %) of equity in premium per trade, with the one-contract minimum) so the curve reflects
+signal quality; `live` replays the auto-trader's risk settings exactly (on a small single-symbol test
+this is often a few percent of equity, so the curve looks nearly flat). Each strategy declares
+`backtest_support`: `full` (tsmom_equity, meanrev_etf), `synthetic` (options_edge, earnings_drift —
+synthetic option prices), or `none` (flow_follow: no historical flow; orb_intraday: needs minute
+bars; llm_analyst: LLM not replayed) — those are refused with the reason. Every result reports a
+funnel (ideas generated → entered, top risk rejections) so a flat result is always explained.

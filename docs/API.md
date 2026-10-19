@@ -204,7 +204,8 @@ interface ParamSpec { name: string; type: "float" | "int" | "bool" | "enum" | "s
 interface StrategyInfo { id: string; name: string; description: string;
   asset_class: "option" | "equity"; style: "intraday" | "swing"; enabled: boolean;
   use_llm_gate: boolean; params: Record<string, unknown>; schema: ParamSpec[];
-  tiers: string[]; stats: { trades: number; win_rate: number | null; pnl: number } }
+  tiers: string[]; stats: { trades: number; win_rate: number | null; pnl: number };
+  backtest: { support: "full" | "synthetic" | "none"; note: string } }
 interface RiskConfig { kelly_multiplier: number; max_risk_per_trade: number; max_position_pct: number;
   max_open_positions: number; max_per_underlying: number; max_options_allocation: number;
   max_daily_loss: number; max_drawdown: number; max_trades_per_day: number;
@@ -246,7 +247,7 @@ Calls are persisted in `llm_calls` (per mode, up to 60,000 chars per prompt/repl
 ### Backtest
 | Method | Path | Body | Response |
 |---|---|---|---|
-| POST | `/api/backtest` | `{strategy_id, symbols: string[], start, end, params?, initial_equity?, iv_rv?}` (iv_rv = assumed implied/realised vol ratio for synthetic option pricing, default 1.10) | `BacktestResult` |
+| POST | `/api/backtest` | `{strategy_id, symbols: string[], start, end, params?, initial_equity?, iv_rv?}` (iv_rv = assumed implied/realised vol ratio for synthetic option pricing, default 1.10); `sizing?`: `equal_weight` (default — each symbol gets 1/N of equity; options ≤ 20 % premium per trade) or `live` (the auto-trader's risk settings). Strategies with `backtest.support = "none"` return 400 with the reason | `BacktestResult` |
 
 ```ts
 interface BacktestResult { strategy_id: string; equity: { t: number; v: number }[];
@@ -254,7 +255,8 @@ interface BacktestResult { strategy_id: string; equity: { t: number; v: number }
   metrics: { cagr: number; sharpe: number; sortino: number; max_drawdown: number; calmar: number;
     win_rate: number; profit_factor: number; trades: number; exposure: number;
     psr: number; dsr: number; };
-  trades: JournalEntry[]; notes: string[]; }
+  trades: JournalEntry[]; notes: string[]; sizing: "equal_weight" | "live";
+  funnel: { ideas: number; entered: number; top_rejections: Record<string, number> }; }
 ```
 
 ### Additions (implemented in v1, optional for clients)

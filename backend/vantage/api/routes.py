@@ -626,7 +626,8 @@ async def backtest(request: Request, body: dict[str, Any] = Body(...)) -> JSON:
     try:
         res = await run_backtest(c, sid, syms, start, end, body.get("params") or {},
                                  float(body.get("initial_equity") or 10_000), n_trials=len(seen),
-                                 iv_rv=max(0.5, min(2.0, float(body.get("iv_rv") or 1.10))))
+                                 iv_rv=max(0.5, min(2.0, float(body.get("iv_rv") or 1.10))),
+                                 sizing=str(body.get("sizing") or "equal_weight"))
     except KeyError:
         return err("not_found", f"unknown strategy {sid}", 404)
     except ValueError as e:

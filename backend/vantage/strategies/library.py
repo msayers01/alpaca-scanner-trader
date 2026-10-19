@@ -44,7 +44,10 @@ def _best_affordable(cands: list[dict[str, Any]], ctx: StrategyContext, stop_pct
         by_kelly = c["kelly"] * r.get("kelly_multiplier", 0.25) * eq
         by_risk = eq * r.get("max_risk_per_trade", 0.02) / max(stop_pct, 0.5)
         by_cap = eq * r.get("max_position_pct", 0.1)
-        if premium <= min(by_kelly, by_risk, by_cap):
+        hard_ok = premium <= min(by_risk, by_cap)
+        # same rule as RiskManager: Kelly may size below one contract if `min_one_contract` and edge > 0
+        kelly_ok = premium <= by_kelly or (r.get("min_one_contract", True) and c["kelly"] > 0)
+        if hard_ok and kelly_ok:
             ok.append(c)
     return max(ok or cands, key=lambda c: c["edge_score"])
 
@@ -62,6 +65,10 @@ class OptionsEdge(Strategy):
                    "volatility is not expensive vs. our forecast, and the contract is liquid.")
     asset_class = "option"
     style = "swing"
+    backtest_support = "synthetic"
+    backtest_note = (
+        "Options are priced synthetically (Black-Scholes, IV = forecast vol × the IV/RV assumption). With realistic IV the EV filter is strict and the strategy often stays flat; news and flow signals are unavailable historically."
+    )
     params_schema = [
         ParamSpec("z_min", "float", 1.0, "Min |forecast z|", "Ensemble strength required", "Entry", min=0, max=5, step=0.1),
         ParamSpec("ev_min", "float", 0.08, "Min EV on premium", "", "Entry", min=0, max=5, step=0.01),
@@ -112,6 +119,10 @@ class FlowFollow(Strategy):
                    "expressed with a shorter-dated option. LLM-gated by default.")
     asset_class = "option"
     style = "swing"
+    backtest_support = "none"
+    backtest_note = (
+        "Needs historical options order flow (sweeps, aggressor side), which isn't available to the backtester."
+    )
     default_llm_gate = True
     params_schema = [
         ParamSpec("flow_min", "float", 0.35, "Min flow score", "options_flow signal score", "Entry", min=0, max=1, step=0.05),
@@ -163,6 +174,10 @@ class EarningsDrift(Strategy):
                    "(post-earnings-announcement drift), using an option dated past the drift window.")
     asset_class = "option"
     style = "swing"
+    backtest_support = "synthetic"
+    backtest_note = (
+        "Uses price/volume gaps as earnings proxies; options priced synthetically. Rare on broad ETFs — try single stocks."
+    )
     default_llm_gate = True
     params_schema = [
         ParamSpec("drift_min", "float", 0.35, "Min drift score", "event_drift signal score", "Entry", min=0, max=1, step=0.05),
@@ -344,6 +359,10 @@ class OrbIntraday(Strategy):
                    "Skipped if day trades are disabled in the risk settings.")
     asset_class = "equity"
     style = "intraday"
+    backtest_support = "none"
+    backtest_note = (
+        "Intraday strategy: needs minute-bar backtesting, which isn't supported yet (daily bars only)."
+    )
     params_schema = [
         ParamSpec("orb_min", "float", 0.45, "Min ORB score", "", "Entry", min=0, max=1, step=0.05),
         ParamSpec("rel_volume_min", "float", 1.5, "Min relative volume", "", "Entry", min=0.5, max=20, step=0.1),
@@ -394,6 +413,10 @@ class LLMAnalyst(Strategy):
                    "the deterministic Kelly scaled down by the LLM's conviction.")
     asset_class = "option"
     style = "swing"
+    backtest_support = "none"
+    backtest_note = (
+        "Decisions come from the live LLM reading news and flow; they can't be replayed historically."
+    )
     params_schema = [
         ParamSpec("top_n", "int", 4, "Names reviewed per cycle", "", "Entry", min=1, max=20, step=1),
         ParamSpec("z_min", "float", 0.8, "Min |forecast z|", "", "Entry", min=0, max=5, step=0.1),

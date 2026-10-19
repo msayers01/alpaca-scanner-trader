@@ -380,7 +380,12 @@ export interface StrategyInfo {
   schema: ParamSpec[];
   tiers: string[];
   stats: { trades: number; win_rate: number | null; pnl: number };
+  /** full = replayable on daily bars; synthetic = options priced synthetically; none = can't be backtested. */
+  backtest?: { support: BacktestSupport; note: string };
 }
+
+export type BacktestSupport = "full" | "synthetic" | "none";
+export type BacktestSizing = "equal_weight" | "live";
 
 export interface StrategyUpdate {
   enabled?: boolean;
@@ -549,6 +554,8 @@ export interface BacktestRequest {
   initial_equity?: number;
   /** Assumed implied/realised vol ratio for synthetic option pricing (default 1.10). */
   iv_rv?: number;
+  /** equal_weight (default): each symbol gets an equal slice of equity; live: the auto-trader's risk settings. */
+  sizing?: BacktestSizing;
 }
 
 export interface BacktestMetrics {
@@ -572,6 +579,8 @@ export interface BacktestResult {
   metrics: BacktestMetrics;
   trades: JournalEntry[];
   notes: string[];
+  sizing?: BacktestSizing;
+  funnel?: { ideas: number; entered: number; top_rejections: Record<string, number> };
 }
 
 // ---------------------------------------------------------------- WebSocket payloads

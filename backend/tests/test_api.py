@@ -129,6 +129,30 @@ def test_backtest(client):
     assert res["equity"] and "sharpe" in res["metrics"] and 0 <= res["metrics"]["psr"] <= 1
 
 
+def test_backtest_equal_weight_actually_moves_equity(client):
+    """Regression: single-symbol backtests used live per-position caps, so the curve stayed at ~$10,000."""
+    body = {"strategy_id": "tsmom_equity", "symbols": ["SPY"], "start": "2025-06-01", "end": "2026-09-30",
+            "initial_equity": 10000}
+    ew = client.post("/api/backtest", json=body).json()
+    live = client.post("/api/backtest", json={**body, "sizing": "live"}).json()
+    assert ew["sizing"] == "equal_weight" and live["sizing"] == "live"
+    assert ew["metrics"]["trades"] > 0 and ew["funnel"]["ideas"] > 0
+    move = lambda r: max(abs(p["v"] - 10000) for p in r["equity"])  # noqa: E731
+    assert move(ew) > 3 * move(live) and move(ew) > 100  # equal-weight exposure is materially larger
+
+
+def test_backtest_refuses_unsupported_strategies_with_reason(client):
+    for sid in ("flow_follow", "llm_analyst", "orb_intraday"):
+        r = client.post("/api/backtest", json={"strategy_id": sid, "symbols": ["SPY"]})
+        assert r.status_code == 400 and "can't be backtested" in r.json()["detail"], sid
+    info = {s["id"]: s["backtest"] for s in client.get("/api/strategies").json()}
+    assert info["tsmom_equity"]["support"] == "full" and info["options_edge"]["support"] == "synthetic"
+    assert info["flow_follow"]["support"] == "none" and info["flow_follow"]["note"]
+    zero = client.post("/api/backtest", json={"strategy_id": "options_edge", "symbols": ["SPY"],
+                                              "start": "2026-03-01", "end": "2026-06-01"}).json()
+    assert "funnel" in zero and any(n.startswith("Funnel:") for n in zero["notes"])
+
+
 def test_llm_endpoints(client):
     info = client.get("/api/llm").json()
     assert "model" in info

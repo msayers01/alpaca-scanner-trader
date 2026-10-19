@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, errorMessage } from "../lib/api";
-import type { BacktestMetrics, BacktestResult } from "../lib/types";
+import type { BacktestMetrics, BacktestResult, BacktestSizing } from "../lib/types";
 import { etYmd, fmtDate, fmtNum, fmtPct, fmtUsd, signClass } from "../lib/format";
 import { useAsync } from "../hooks/useAsync";
 import { EquityCurveChart } from "../components/charts/EquityCurveChart";
@@ -47,6 +47,7 @@ export default function Backtest() {
   const [end, setEnd] = useState(() => etYmd(Date.now()));
   const [equity, setEquity] = useState(10_000);
   const [ivRv, setIvRv] = useState(1.1);
+  const [sizing, setSizing] = useState<BacktestSizing>("equal_weight");
   const [override, setOverride] = useState(false);
   const [params, setParams] = useState<ParamValues>({});
   const [running, setRunning] = useState(false);
@@ -56,7 +57,9 @@ export default function Backtest() {
   const strat = useMemo(() => strategies.data?.find((s) => s.id === strategyId) ?? null, [strategies.data, strategyId]);
 
   useEffect(() => {
-    if (!strategyId && strategies.data?.length) setStrategyId(strategies.data[0].id);
+    // default to a strategy that fully replays on daily bars (options/flow/LLM ones often stay flat or can't run)
+    if (!strategyId && strategies.data?.length)
+      setStrategyId((strategies.data.find((s) => s.backtest?.support === "full") ?? strategies.data[0]).id);
   }, [strategies.data, strategyId]);
   useEffect(() => {
     if (strat) setParams(strat.params);
@@ -67,7 +70,8 @@ export default function Backtest() {
     .split(/[\s,]+/)
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean);
-  const valid = !!strategyId && symList.length > 0 && start < end && equity > 0;
+  const support = strat?.backtest?.support ?? "full";
+  const valid = !!strategyId && support !== "none" && symList.length > 0 && start < end && equity > 0;
 
   const run = async () => {
     if (!valid) return;
@@ -81,6 +85,7 @@ export default function Backtest() {
         end,
         initial_equity: equity,
         iv_rv: strat?.asset_class === "option" ? ivRv : undefined,
+        sizing,
         params: override && strat ? diffParams(params, strat.params) : undefined,
       });
       setResult(r);
@@ -121,8 +126,9 @@ export default function Backtest() {
                   <span className="label">Strategy</span>
                   <select className="select" value={strategyId} onChange={(e) => setStrategyId(e.target.value)}>
                     {strategies.data.map((s) => (
-                      <option key={s.id} value={s.id}>
+                      <option key={s.id} value={s.id} disabled={s.backtest?.support === "none"}>
                         {s.name}
+                        {s.backtest?.support === "synthetic" ? " — synthetic options" : s.backtest?.support === "none" ? " — not backtestable" : ""}
                       </option>
                     ))}
                   </select>
@@ -143,6 +149,16 @@ export default function Backtest() {
                   <span className="label">Initial equity ($)</span>
                   <NumberInput value={equity} onChange={setEquity} min={100} className="input input-num" ariaLabel="Initial equity" />
                 </label>
+                <label
+                  className="field"
+                  title="Equal weight: each symbol gets an equal slice of equity, so the curve reflects the strategy's signals. Live risk settings: the auto-trader's Kelly multiplier and per-trade caps — what the bot would actually trade (often a small fraction of equity)."
+                >
+                  <span className="label">Position sizing</span>
+                  <select className="select" value={sizing} onChange={(e) => setSizing(e.target.value as BacktestSizing)}>
+                    <option value="equal_weight">Equal weight per symbol</option>
+                    <option value="live">Live risk settings</option>
+                  </select>
+                </label>
                 {strat?.asset_class === "option" && (
                   <label className="field" title="Synthetic option pricing: implied vol = forecast realised vol × this ratio. Index options typically trade around 1.1–1.2 (the variance risk premium).">
                     <span className="label">Assumed IV / RV</span>
@@ -151,6 +167,12 @@ export default function Backtest() {
                 )}
               </div>
               {strat && <div className="small muted" style={{ marginTop: 12 }}>{strat.description}</div>}
+              {strat?.backtest && strat.backtest.support !== "full" && (
+                <div className={`callout ${support === "none" ? "danger" : "info"}`} style={{ marginTop: 12 }}>
+                  <strong>{support === "none" ? "Can't be backtested. " : "Approximate backtest. "}</strong>
+                  {strat.backtest.note}
+                </div>
+              )}
               <div className="row" style={{ marginTop: 16 }}>
                 <Switch checked={override} onChange={setOverride} label="Override strategy parameters" disabled={!strat?.schema.length} />
                 <span className="spacer" />
@@ -181,6 +203,21 @@ export default function Backtest() {
 
       {result && m && (
         <div className="stack-lg">
+          {m.trades === 0 && (
+            <div className="callout info">
+              <strong>No trades in this period.</strong>{" "}
+              {result.funnel && result.funnel.ideas === 0
+                ? "The strategy's entry filters never produced a trade idea, so equity stayed at its starting value. "
+                : `The strategy proposed ${result.funnel?.ideas ?? 0} idea(s) but the risk checks rejected them${
+                    result.funnel && Object.keys(result.funnel.top_rejections).length
+                      ? ` (mostly: ${Object.keys(result.funnel.top_rejections)[0]})`
+                      : ""
+                  }. `}
+              {strat?.asset_class === "option"
+                ? "Long options need a strong forecast or cheap volatility: try more symbols (single stocks), a longer range, a lower IV/RV assumption, or loosen thresholds under “Override strategy parameters”."
+                : "Try more symbols, a longer date range, or loosen thresholds under “Override strategy parameters”."}
+            </div>
+          )}
           <section>
             <div className="row" style={{ marginBottom: 8 }}>
               <div className="section-title" style={{ margin: 0 }}>

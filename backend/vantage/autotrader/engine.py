@@ -491,6 +491,7 @@ class AutoTrader:
                 "schema": [p.to_wire() for p in s.schema()],
                 "tiers": [t for t, cfg in TIER_BY_ID.items() if sid in cfg["strategies"]],
                 "stats": stats.get(sid, {"trades": 0, "win_rate": None, "pnl": 0.0}),
+                "backtest": {"support": s.backtest_support, "note": s.backtest_note},
             })
         return out
 

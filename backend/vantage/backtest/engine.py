@@ -40,6 +40,7 @@ from vantage.strategies.presets import TIER_BY_ID, tier_for_equity
 
 DAY_MS = 86_400_000
 WARMUP = 260
+SIZING_MODES = ("equal_weight", "live")
 
 
 @dataclass
@@ -142,10 +143,13 @@ def _bar_date(b: Bar) -> date:
 
 
 async def run_backtest(c: Any, strategy_id: str, symbols: list[str], start: date, end: date, params: dict[str, Any],
-                       initial_equity: float, n_trials: int = 1, iv_rv: float = 1.10) -> dict[str, Any]:
+                       initial_equity: float, n_trials: int = 1, iv_rv: float = 1.10,
+                       sizing: str = "equal_weight") -> dict[str, Any]:
     cls = REGISTRY[strategy_id]
-    if cls.style == "intraday":
-        raise ValueError("intraday strategies cannot be backtested on daily bars yet")
+    if cls.backtest_support == "none":
+        raise ValueError(f"{cls.name} can't be backtested: {cls.backtest_note}")
+    if sizing not in SIZING_MODES:
+        raise ValueError(f"sizing must be one of {', '.join(SIZING_MODES)}")
     fetch_from = start - timedelta(days=int(WARMUP * 1.5) + 10)
     t0 = clock.to_ms(clock.et_dt(fetch_from, clock.OPEN))
     t1 = clock.to_ms(clock.et_dt(end, clock.CLOSE))
@@ -153,7 +157,7 @@ async def run_backtest(c: Any, strategy_id: str, symbols: list[str], start: date
     data = await c.broker.get_bars_multi(want, "1Day", t0, t1)
     risk_cfg = dict(c.autotrader.risk.cfg)
     return await asyncio.to_thread(_run_sync, strategy_id, symbols, start, end, params, initial_equity, data, risk_cfg,
-                                   c.settings.risk_free_rate, n_trials, iv_rv)
+                                   c.settings.risk_free_rate, n_trials, iv_rv, sizing)
 
 
 def _run_sync(*a: Any) -> dict[str, Any]:
@@ -162,7 +166,7 @@ def _run_sync(*a: Any) -> dict[str, Any]:
 
 async def _simulate(strategy_id: str, symbols: list[str], start: date, end: date, params: dict[str, Any],
                     initial_equity: float, data: dict[str, list[Bar]], risk_cfg: dict[str, Any], r: float,
-                    n_trials: int, iv_rv: float = 1.10) -> dict[str, Any]:
+                    n_trials: int, iv_rv: float = 1.10, sizing: str = "equal_weight") -> dict[str, Any]:
     notes = ["Daily bars; fills at next open with 5 bps slippage (equities) or half-spread (options)."]
     strat = REGISTRY[strategy_id](params)
     strat.use_llm_gate = False
@@ -183,7 +187,23 @@ async def _simulate(strategy_id: str, symbols: list[str], start: date, end: date
     scanner = _Scanner(market, engine, r, iv_rv, 0.04)
     funnel: dict[str, int] = {"ideas": 0, "entered": 0}
     reject_reasons: dict[str, int] = {}
-    risk = RiskManager({**risk_cfg, "max_trades_per_day": 1000}, "sim")
+    cfg = {**risk_cfg, "max_trades_per_day": 1000}
+    n_sym = max(1, len(symbols))
+    if sizing == "equal_weight":
+        # Signal-quality view: each symbol gets an equal slice of capital (shares) or an equal premium budget
+        # (options, capped at 20% of equity per trade) instead of the live per-trade caps, which on a small
+        # single-symbol test keep the curve almost flat.
+        slice_ = 1.0 / n_sym
+        budget = slice_ if strat.asset_class == "equity" else min(slice_, 0.20)
+        cfg.update(kelly_multiplier=1.0, max_open_positions=max(n_sym, 1), max_per_underlying=1,
+                   max_new_per_cycle=n_sym, min_one_contract=True, max_position_pct=budget,
+                   max_risk_per_trade=budget, max_options_allocation=1.0)
+        notes.append(f"Sizing: equal weight — up to {slice_:.0%} of equity per symbol"
+                     + (" in shares." if strat.asset_class == "equity" else f" (≤ {budget:.0%} premium per option trade)."))
+    else:
+        notes.append("Sizing: live risk settings (Kelly multiplier, per-trade risk and position caps from the "
+                     "Auto-trader page) — what the bot would actually do.")
+    risk = RiskManager(cfg, "sim")
     cash = initial_equity
     positions: dict[str, BTPos] = {}
     trades: list[dict[str, Any]] = []
@@ -364,7 +384,8 @@ async def _simulate(strategy_id: str, symbols: list[str], start: date, end: date
         metrics["dsr"] = 0.0
     if n_trials > 1:
         notes.append(f"DSR deflates for {n_trials} distinct parameter/symbol sets tried for this strategy.")
-    return {"strategy_id": strategy_id, "equity": [{"t": a, "v": round(b, 2)} for a, b in equity_curve],
+    return {"strategy_id": strategy_id, "sizing": sizing, "funnel": {**funnel, "top_rejections": dict(top)},
+            "equity": [{"t": a, "v": round(b, 2)} for a, b in equity_curve],
             "benchmark": bench, "metrics": {k: (float(v) if isinstance(v, (int, float, np.floating)) and math.isfinite(v)
                                                 else 0.0) for k, v in metrics.items()},
             "trades": trades[-500:], "notes": notes}

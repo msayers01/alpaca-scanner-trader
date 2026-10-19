@@ -68,6 +68,10 @@ class Strategy(ABC):
     asset_class: ClassVar[str] = "option"
     style: ClassVar[str] = "swing"
     default_llm_gate: ClassVar[bool] = False
+    # "full" = replayable on daily bars; "synthetic" = runs, but options are priced synthetically;
+    # "none" = needs data the backtester doesn't have (reason in backtest_note)
+    backtest_support: ClassVar[str] = "full"
+    backtest_note: ClassVar[str] = ""
     params_schema: ClassVar[list[ParamSpec]] = []
     exit_defaults: ClassVar[dict[str, Any]] = {}
 
