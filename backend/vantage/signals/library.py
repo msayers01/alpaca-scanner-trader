@@ -207,6 +207,56 @@ def vol_premium(d: SymbolData, ctx: SignalContext) -> Out:
                                          "iv_rv": round(ratio, 3)}
 
 
+def _beta(d: SymbolData, lo: float = -2.0, hi: float = 2.5) -> float:
+    b = d.extra.get("beta", 1.0)
+    return max(lo, min(hi, float(b))) if b is not None and math.isfinite(b) else 1.0
+
+
+def social_sentiment(d: SymbolData, ctx: SignalContext) -> Out:
+    """Retail polarity gated by attention, with a crowding guard (quant/sentiment.py:social_score)."""
+    if ctx.intel is None or not ctx.intel.enabled:
+        return None
+    return ctx.intel.social_signal(d.symbol, now=ctx.now or None)
+
+
+def statement_shock(d: SymbolData, ctx: SignalContext) -> Out:
+    """Decayed effect of statements by market movers (Trump, Fed, ...) on this symbol: explicit, sector or market-wide."""
+    if ctx.intel is None or not ctx.intel.enabled:
+        return None
+    return ctx.intel.statement_signal(d.symbol, beta=_beta(d), now=ctx.now or None)
+
+
+def vix_regime(d: SymbolData, ctx: SignalContext) -> Out:
+    """Risk-on score from the VIX level/term structure/spike, scaled by the symbol's beta to SPY."""
+    if ctx.intel is None or not ctx.intel.enabled or not ctx.intel.vix:
+        return None
+    v = ctx.intel.vix
+    meta = {k: (round(v[k], 3) if isinstance(v.get(k), float) else v.get(k)) for k in ("vix", "label", "chg_1d", "term", "pct", "risk_on")}
+    meta["beta"] = round(_beta(d, -3.0, 3.0), 2)
+    return 2.0 * float(v["risk_on"]) * _beta(d, -3.0, 3.0), 0.5, meta
+
+
+def prediction_tilt(d: SymbolData, ctx: SignalContext) -> Out:
+    """Net equity tilt from repriced macro prediction markets (recession, tariffs, ceasefire...), scaled by beta."""
+    if ctx.intel is None or not ctx.intel.enabled:
+        return None
+    m = ctx.intel.macro(ctx.now or None)
+    p = m["prediction"]
+    if p["n"] < 3:
+        return None
+    return 2.0 * float(p["tilt"]) * _beta(d), min(0.6, 0.2 + p["n"] / 40), {"tilt": p["tilt"], "markets": p["n"], "top": p["top"][:2]}
+
+
+def event_vol(d: SymbolData, ctx: SignalContext) -> Out:
+    """Non-directional: positive = a volatility event looks near (VIX stress and/or uncertain, fast-repricing markets)."""
+    if ctx.intel is None or not ctx.intel.enabled:
+        return None
+    m = ctx.intel.macro(ctx.now or None)
+    if not m["vix"] and m["prediction"]["n"] < 3:
+        return None
+    return 4.0 * (float(m["event_risk"]) - 0.25), 0.6, {"event_risk": m["event_risk"], "vix": (m["vix"] or {}).get("label")}
+
+
 MODELS: list[ModelSpec] = [
     ModelSpec("tsmom", "Time-series momentum", 20, "daily", True, 1.0,
               "Vol-scaled 1/3/6/12-month returns skipping the last week (Moskowitz-Ooi-Pedersen).", tsmom),
@@ -231,6 +281,19 @@ MODELS: list[ModelSpec] = [
               "Decayed sentiment of recent news (LLM-scored when available, lexicon otherwise).", news_sentiment),
     ModelSpec("event_drift", "Event drift (PEAD)", 20, "daily", True, 0.7,
               "Continuation after a volume-confirmed gap (earnings/news event) in the last 40 sessions.", event_drift),
+    ModelSpec("social_sentiment", "Social sentiment", 2, "event", True, 0.4,
+              "Reddit/Stocktwits/X polarity gated by attention vs baseline; shrunk 60% when the crowd is loud and one-sided.",
+              social_sentiment),
+    ModelSpec("statement_shock", "Mover statements", 1, "event", True, 0.5,
+              "Decayed market impact of statements by Trump, the Fed and other configured movers (explicit/sector/market-wide).",
+              statement_shock),
+    ModelSpec("vix_regime", "VIX regime", 5, "event", True, 0.5,
+              "Risk-on score from VIX level, 1-day spike and VIX3M/VIX term structure, scaled by beta to SPY.", vix_regime),
+    ModelSpec("prediction_tilt", "Prediction markets", 10, "event", True, 0.4,
+              "Net equity tilt from repriced macro prediction markets (Polymarket/Kalshi), scaled by beta.", prediction_tilt),
+    ModelSpec("event_vol", "Event volatility risk", 5, "event", False, 0.0,
+              "Prediction-market uncertainty/repricing and VIX stress; positive = a volatility event looks near. Non-directional.",
+              event_vol),
     ModelSpec("vol_premium", "Volatility premium", 10, "daily", False, 0.0,
               "ln(implied / forecast vol); positive = options cheap. Non-directional, used by the scanner.", vol_premium),
 ]

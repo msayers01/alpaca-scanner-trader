@@ -29,6 +29,9 @@ How to read the dossier (we are always the BUYER of the option or the stock):
 - scan.iv_rank near 1 = IV high vs its own history (expensive); near 0 = cheap.
 - events.days_to_earnings: null = no known date; small numbers mean an imminent binary event and IV crush risk.
 - news[].sentiment in [-1, 1]; options_flow.score > 0 = bullish aggressive flow.
+- intel.macro.risk_on in [-1, 1] (positive = risk-on) blends the VIX regime, prediction-market repricing and statements by
+  market movers; intel.macro.event_risk in [0, 1] is the chance a volatility event is near. intel.social.polarity is retail
+  sentiment (low-quality evidence; crowded=true means the crowd is already one-sided, which is a contrarian warning).
 - A bearish trade (long put) wants negative scores / bearish flow; a bullish trade wants the opposite.
 Return only JSON matching the schema."""
 
@@ -110,3 +113,47 @@ ANALYST_SCHEMA: dict[str, Any] = {
     },
     "required": ["action", "conviction", "horizon_days", "rationale"],
 }
+
+
+# ----------------------------------------------------------------------------- statements by market movers
+INTEL_SYSTEM = """You read statements by people and institutions that move markets (heads of state, central bankers,
+regulators, CEOs) and judge their likely effect on US equities.
+Estimate:
+- market_relevant: false for rallies, greetings, sports, personal posts or anything without an economic/market angle
+- market_direction: -1 (clearly bearish for US stocks) .. +1 (clearly bullish)
+- magnitude: 0..1 expected size relative to a normal day's index move (1 = a multi-percent index move)
+- novelty: 0..1 (0 = repeats a known position, 1 = new policy/action)
+- horizon: "intraday", "days" or "weeks"
+- affected: tickers from the provided universe that are specifically exposed (direction -1..1, relevance 0..1)
+Threats that were already priced in, vague rhetoric and campaign talk are near zero. Concrete actions with dates and
+numbers (tariff rates, rate decisions, sanctions, bans, deals) are large. Return only JSON matching the schema."""
+
+INTEL_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "market_relevant": {"type": "boolean"},
+        "market_direction": {"type": "number", "minimum": -1, "maximum": 1},
+        "magnitude": {"type": "number", "minimum": 0, "maximum": 1},
+        "novelty": {"type": "number", "minimum": 0, "maximum": 1},
+        "horizon": {"type": "string", "enum": ["intraday", "days", "weeks"]},
+        "affected": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "symbol": {"type": "string"},
+                    "direction": {"type": "number", "minimum": -1, "maximum": 1},
+                    "relevance": {"type": "number", "minimum": 0, "maximum": 1},
+                },
+                "required": ["symbol", "direction"],
+            },
+        },
+        "rationale": {"type": "string"},
+    },
+    "required": ["market_relevant", "market_direction", "magnitude", "novelty"],
+}
+
+
+def intel_user(author: str, mover: str | None, text: str, universe: list[str]) -> str:
+    return (f"Speaker: {author}" + (f" ({mover})" if mover else "") + f"\nUniverse: {', '.join(universe[:60])}\n"
+            f"Statement: {text[:1500]}")

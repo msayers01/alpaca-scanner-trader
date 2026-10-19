@@ -2303,6 +2303,70 @@ kbd {
   font-variant-numeric: tabular-nums;
 }
 
+/* ------------------------------------------------------------------ intel */
+.vix-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.vix-chip:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+.intel-row {
+  display: flex;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.intel-row:last-child {
+  border-bottom: none;
+}
+.intel-row .edge {
+  flex: none;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--border-strong);
+}
+.intel-row .edge.up {
+  background: var(--up);
+}
+.intel-row .edge.down {
+  background: var(--down);
+}
+.intel-main {
+  min-width: 0;
+  flex: 1;
+}
+.intel-head,
+.intel-tags {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+.intel-text {
+  margin: var(--sp-1) 0;
+  overflow-wrap: anywhere;
+}
+.intel-text a {
+  color: var(--text);
+}
+.intel-text a:hover {
+  color: var(--accent);
+}
+.intel-tags .ellipsis {
+  max-width: 100%;
+}
+
 @media (max-width: 720px) {
   .help-content .tbl {
     display: block;

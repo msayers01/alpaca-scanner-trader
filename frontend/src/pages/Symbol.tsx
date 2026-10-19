@@ -13,6 +13,7 @@ import { LiveBidAsk, LiveOptionMid } from "../components/LivePrice";
 import { saveWatchlist } from "../components/Watchlist";
 import { Icon } from "../components/ui/Icon";
 import { useAsync } from "../hooks/useAsync";
+import { SymbolIntelCard } from "../components/IntelCards";
 import { useAccountStore } from "../store/account";
 import { useQuote } from "../store/quotes";
 import { useUiStore } from "../store/ui";
@@ -218,6 +219,7 @@ export default function SymbolPage() {
               )}
             </div>
           </div>
+          <SymbolIntelCard symbol={sym} />
           <PositionStrip symbol={sym} />
         </aside>
       </div>

@@ -13,6 +13,7 @@ export const GO_SHORTCUTS: { key: string; path: string; label: string }[] = [
   { key: "d", path: "/", label: "Dashboard" },
   { key: "s", path: "/scanner", label: "Scanner" },
   { key: "f", path: "/feeds", label: "Feeds" },
+  { key: "i", path: "/intel", label: "Intel" },
   { key: "a", path: "/autotrader", label: "Auto-trader" },
   { key: "c", path: "/calendar", label: "Calendar" },
   { key: "b", path: "/backtest", label: "Backtest" },

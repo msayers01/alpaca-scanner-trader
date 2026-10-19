@@ -207,7 +207,7 @@ class AutoTrader:
         metas = await self._metas()
         ctx = StrategyContext(
             mode=self.mode, market=c.market, options=c.options, signals=c.signals, scanner=c.scanner, news=c.news,
-            flow=c.flow, calendar=c.calendar, llm=c.llm, account=account, positions=positions, tier=self.tier,
+            flow=c.flow, calendar=c.calendar, llm=c.llm, intel=c.intel, account=account, positions=positions, tier=self.tier,
             risk=self.risk.cfg, universe=c.universe(), market_state=ms,
             owned={s: m["strategy_id"] for s, m in metas.items() if m.get("strategy_id")},
             today=await self._today_by_strategy(),

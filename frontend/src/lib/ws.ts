@@ -268,4 +268,6 @@ export const channels = {
   decisions: "decisions",
   status: "status",
   scanner: "scanner",
+  intel: "intel",
+  macro: "macro",
 } as const;

@@ -17,6 +17,13 @@ import type {
   LlmCallsResponse,
   FlowEvent,
   Forecast,
+  IntelConfig,
+  IntelItem,
+  IntelSourcesResponse,
+  IntelSource,
+  IntelSummary,
+  PredictionMarket,
+  SocialStat,
   HistoryRange,
   JournalEntry,
   LlmInfo,
@@ -187,6 +194,17 @@ export const api = {
     request<NewsItem[]>("GET", "/news", { query: { symbol, limit: Math.min(limit, 200) }, ...o }),
   flow: (underlying?: string, limit = 200, o?: Opt) =>
     request<FlowEvent[]>("GET", "/flow", { query: { underlying, limit }, ...o }),
+
+  // Intel (social, mover statements, prediction markets, VIX)
+  intelSummary: (o?: Opt) => request<IntelSummary>("GET", "/intel/summary", o),
+  intelItems: (q: { kind?: "social" | "statement"; symbol?: string; mover?: string; limit?: number } = {}, o?: Opt) =>
+    request<IntelItem[]>("GET", "/intel/items", { query: q, ...o }),
+  intelMarkets: (limit = 60, o?: Opt) => request<PredictionMarket[]>("GET", "/intel/markets", { query: { limit }, ...o }),
+  intelSocial: (symbol: string, o?: Opt) => request<SocialStat | null>("GET", "/intel/social", { query: { symbol }, ...o }),
+  intelSources: (o?: Opt) => request<IntelSourcesResponse>("GET", "/intel/sources", o),
+  updateIntelConfig: (body: Partial<IntelConfig>) => request<IntelSourcesResponse>("PUT", "/intel/config", { body }),
+  refreshIntel: (source?: string) =>
+    request<{ sources: IntelSource[] }>("POST", "/intel/refresh", { body: source ? { source } : {}, timeoutMs: 90_000 }),
 
   // Calendar
   calendar: (start: string, end: string, o?: Opt) => request<CalEvent[]>("GET", "/calendar", { query: { start, end }, ...o }),

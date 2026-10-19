@@ -149,6 +149,24 @@ prior weights with strength `λ = 30/(30 + n_obs)`. Forecast:
   strategy is explicitly event-driven (risk param `earnings_blackout_days`).
 - FOMC/CPI days: entry window blocked ±30 min around the release (config).
 
+### 6.6 Intel signals — `intel/`, `quant/sentiment.py`
+
+External-information models. All are low prior weight (0.4–0.5): retail chatter and rhetoric are noisy, so the online
+IC tracker (§6 ensemble) decides how much they earn. None of them can place an order.
+
+| id | Inputs | Statistic |
+|---|---|---|
+| `social_sentiment` | Reddit posts, Stocktwits (user-tagged bull/bear), X cashtags, ApeWisdom mention counts | `polarity = (B−R)/(B+R+3)` with `B,R` = Σ max(±s,0)·strength·engagement·decay (half-life 6 h, engagement weight `1+ln(1+e)/3`); `attention = ln((m+k)/(m₀+k))` vs the 24 h-ago count (ApeWisdom) or the 6 h item rate vs the prior 66 h rate (only once ≥ 18 h of history exist). `z = 2·polarity·gate(attention)`, gate = 0.25 when interest is fading, else `0.5+0.5·min(1, attn/ln 2)`. **Crowding guard:** `attention > ln 2 + 1` and `|polarity| > 0.6` → `z ×= 0.4` (retail extremes mean-revert) |
+| `statement_shock` | Truth Social archive, Fed/SEC/White House RSS, Google News mover queries, X handles | each statement: `tilt = (P − 1.1·N)/(P+N+1.5)` from a phrase lexicon (longest match first, matched spans masked so *“pause tariffs”* is not also *“tariff”*; a negator within 12 chars flips); LLM re-scores when available (market direction × magnitude, novelty, per-ticker exposures). Applicability to a symbol: explicit mention/LLM exposure **1.0**, exposed theme (tariffs→semis/autos…) **0.7**, market-wide **0.5·β**. `z = 2.5·tanh(Σ v·w·s·a·2^(−age/3h) / 1.5)` |
+| `vix_regime` | VIX, VIX9D, VIX3M, VVIX, SKEW (Yahoo; CBOE CSV fallback) | `risk_on = 0.5·(−z_Δ/3) + 0.35·clip((VIX3M/VIX−1)/0.10) + 0.15·(1−2·pct)`, `z_Δ` = 1-day log change ÷ its 1-year σ; label: **panic** (VIX ≥ 35, or z_Δ ≥ 3 with VIX ≥ 25), **stressed** (≥ 25, pct ≥ 0.85 or inverted curve), **elevated**, **calm**, **normal**. `z = 2·risk_on·β` where β = 60-day OLS beta to SPY (clipped ±3) |
+| `prediction_tilt` | Polymarket (gamma API), Kalshi (events API) | markets are keyword-classified to themes (recession, fed, tariffs, shutdown, geopolitics, markets…) with an equity polarity for a higher *yes* probability; `tilt = tanh(Σ w·pol·Δp₂₄ₕ / 0.08)`, `w` = theme weight × min(1, ln(1+vol₂₄ₕ)/12). Δp is our own 24 h-ago observation when available, else the venue's field. `z = 2·tilt·β` |
+| `event_vol` | same markets + VIX label | **non-directional.** `event_risk = 1 − exp(−Σ_top10 w·(0.6·4p(1−p) + 0.4·min(1,|Δp|/0.15))·e^(−days/30) / 4)`, combined as `max(event_risk, 0.7·stress(label))`. Positive score = a volatility event looks near |
+
+`MacroState.risk_on` = weighted mean of VIX risk-on (0.5), prediction tilt (0.3) and mover-statement tilt (0.2).
+Honest limitations: lexicon scoring cannot read sarcasm or context; Google News headlines are *about* a mover, not
+the mover’s words (strength ×0.6, opinion pieces ×0.3); prediction-market polarity is a keyword heuristic; none of
+these have backtest history, so they are evaluated forward only (paper mode + IC).
+
 ## 7. Preset strategies — `strategies/library.py`
 
 | id | Name | Asset | Style | Entry logic | Exit logic |
@@ -159,6 +177,7 @@ prior weights with strength `λ = 30/(30 + n_obs)`. Forecast:
 | `tsmom_equity` | Vol-Targeted Trend | equity | swing | `tsmom` + `trend_kalman` agree; sized to target 15 % annual vol per position (fractional) | signal flip, 3·ATR trailing stop |
 | `meanrev_etf` | ETF Pullback Reversion | equity | swing | SPY/QQQ/IWM/sector ETFs above SMA200, RSI(2) < 10 or IBS < 0.2 | close > 5-day SMA or 5-day time stop |
 | `orb_intraday` | Opening-Range Breakout | equity/option | intraday | 5-min ORB on top relative-volume names, direction = first candle | stop at OR opposite side, EOD flat |
+| `intel_catalyst` | Sentiment & Macro Catalyst | option | swing | ≥ 2 agreeing intel signals (social / mover statements / prediction markets / VIX) + price confirmation; see §7.2 | standard exit policy + urgent exit if a mover statement turns against it |
 | `llm_analyst` | LLM Analyst | option | swing | Top-N ensemble names → LLM receives full dossier and must approve | standard exit policy |
 
 All strategies expose their thresholds as `ParamSpec`s (editable in the UI).
@@ -183,6 +202,20 @@ probability `p0 = 1/(1+R)`; the user supplies an edge in percentage points over 
 path draws its own win rate), giving P(goal before floor), P(floor), time-to-goal and the Kelly fraction
 `f* = (pW − qL)/(WL)`. Realistic friction (5 bps, 15 % stop slippage) puts break-even ~3–5 points above chance,
 so the strategy needs a genuine edge to grow; with none, nearly every path ends at the floor.
+
+### 7.2 Sentiment & Macro Catalyst (`intel_catalyst`, `strategies/intel.py`)
+Long calls/puts (shorter-dated, 7–35 DTE, |Δ| 0.35–0.65) when independent intel agrees **and** price confirms. Never enabled
+by any tier preset; off until the user switches it on.
+1. `composite = Σ w_m·confidence_m·score_m / Σ w_m` with `w` = statements 0.40, social 0.35, prediction 0.15, VIX 0.10;
+   needs `|composite| ≥ 0.20`.
+2. **Agreement:** ≥ `min_agree` (2) components with `|score·confidence| ≥ 0.15` in the trade direction, at least one of them
+   social/statement; any component against it with `|score·confidence| ≥ 0.30` vetoes. Loud one-sided retail crowd in our own
+   direction (`crowded`) vetoes.
+3. **Price confirmation:** move since the prior close in the trade direction ≥ 0.3 % and ≤ 6 % (anti-chase).
+4. **Regime filters only shrink or veto:** bullish entries blocked in a VIX *panic*; size ×0.5 when *stressed*; size ×0.7 when
+   `event_risk ≥ 0.6`. The LLM gate is on by default (veto/shrink only); risk checks are unchanged.
+5. **Exits:** shared policy (stop −35 %, target +80 %, trail, 5-day time stop, DTE ≤ 3) plus an urgent exit if
+   `statement_shock` flips ≤ −0.5 against the position.
 
 ## 8. Account tiers — `strategies/presets.py`
 

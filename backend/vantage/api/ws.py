@@ -16,8 +16,8 @@ from vantage.core.util import dumps, loads, now_ms, sanitize
 log = logging.getLogger(__name__)
 
 CONFLATED_PREFIXES = ("quote:", "bar:", "oquote:")
-CONFLATED = {"account", "positions", "equity", "status", "scanner"}
-FEEDS = {"orders", "news", "flow", "signals", "decisions", "llm"}
+CONFLATED = {"account", "positions", "equity", "status", "scanner", "macro"}
+FEEDS = {"orders", "news", "flow", "signals", "decisions", "llm", "intel"}
 
 
 class Client:
@@ -62,6 +62,8 @@ class Hub:
             on("signal", lambda t, d: self._push("signals", d)),
             on("decision", lambda t, d: self._push("decisions", d)),
             on("llm", lambda t, d: self._push("llm", d)),
+            on("intel", lambda t, d: self._push("intel", d)),
+            on("macro", lambda t, d: self._push("macro", d, conflate=True)),
         ]
         self._task = asyncio.create_task(self._flusher(), name="ws-flush")
         self._status_task = asyncio.create_task(self._status_loop(), name="ws-status")
@@ -210,6 +212,8 @@ class Hub:
                 cl.latest[ch] = c.account
             elif ch == "positions":
                 cl.latest[ch] = c.positions
+            elif ch == "macro":
+                cl.latest[ch] = c.intel.macro()
             elif ch == "scanner" and c.scanner.last.get("t"):
                 cl.latest[ch] = c.scanner.last
             elif ch.startswith("quote:"):

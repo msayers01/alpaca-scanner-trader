@@ -169,6 +169,51 @@ interface FlowEvent { t: number; contract: string; underlying: string; type: "ca
   source: "stream" | "snapshot"; }
 ```
 
+### Intel (social, statements, prediction markets, VIX)
+| Method | Path | Query/Body | Response |
+|---|---|---|---|
+| GET | `/api/intel/summary` | — | `IntelSummary` (everything the Intel page needs in one call) |
+| GET | `/api/intel/items` | `kind?` (`social`\|`statement`), `symbol?`, `mover?`, `limit` (≤500) | `IntelItem[]` (newest first) |
+| GET | `/api/intel/markets` | `limit` (≤200) | `PredictionMarket[]` |
+| GET | `/api/intel/social` | `symbol?`, `limit` | `SocialStat[]`, or one `SocialStat \| null` when `symbol` is given |
+| GET | `/api/intel/sources` | — | `{sources: IntelSource[], config: IntelConfig, enabled}` |
+| PUT | `/api/intel/config` | partial `IntelConfig` (validated; feed URLs must be public http(s)) | same as `GET /api/intel/sources` |
+| POST | `/api/intel/refresh` | `{source?}` | `{sources: IntelSource[]}` — polls now |
+
+```ts
+interface IntelItem { id: string; t: number; kind: "social" | "statement"; source: string; author: string;
+  text: string; url: string; symbols: string[]; sentiment: number | null;   // [-1,1], + = bullish
+  strength: number | null; engagement: number; themes: string[]; mover: string | null; weight: number;
+  label: "bullish" | "bearish" | null;                                        // platform-tagged (Stocktwits)
+  llm?: { direction: number; magnitude: number; horizon: string; rationale: string;
+          per_symbol: Record<string, number>; latency_ms: number } | null; }
+interface PredictionMarket { id: string; source: "polymarket" | "kalshi"; question: string; url: string;
+  p: number; dp24: number; volume24h: number; liquidity: number; end_ms: number | null; themes: string[];
+  polarity: -1 | 0 | 1;  // sign of a higher 'yes' probability for US equities (0 = volatility only)
+  weight: number; t: number; }
+interface VixRegime { vix: number; prev_close: number | null; chg_1d: number; z_chg: number; chg_5d: number;
+  pct: number; term: number | null; near: number | null; vvix: number | null; skew: number | null;
+  label: "calm" | "normal" | "elevated" | "stressed" | "panic"; risk_on: number; inverted: boolean; t: number; }
+interface MacroState { t: number; vix: VixRegime | null; risk_on: number; event_risk: number;   // [-1,1], [0,1]
+  prediction: { tilt: number; event_risk: number; n: number; top: { question: string; p: number; dp24: number }[] };
+  statements: { tilt: number; n_eff: number }; }
+interface SocialStat { symbol: string; n: number; n_eff: number; bull: number; bear: number; polarity: number;
+  attention: number; mentions_24h: number | null; mentions_prev: number | null; rank: number | null;
+  labelled: number; crowded: boolean; sources: Record<string, number>; score_z: number; confidence: number;
+  in_universe?: boolean; }
+interface IntelSource { id: string; label: string; kind: "social" | "statement" | "prediction" | "volatility";
+  enabled: boolean; configured: boolean; needs: string | null; note: string; interval_s: number;
+  last_poll: number | null; last_ok: number | null; last_error: string | null; n_total: number; n_last: number; }
+interface IntelConfig { enabled: boolean; sources: Record<string, boolean>; subreddits: string[];
+  x_handles: string[]; movers: { name: string; weight: number; x?: string; query?: string; enabled?: boolean }[];
+  rss: { id: string; label?: string; url: string; mover?: string; weight?: number; enabled?: boolean }[]; }
+interface IntelSummary { enabled: boolean; macro: MacroState; markets: PredictionMarket[]; statements: IntelItem[];
+  social: SocialStat[]; sources: IntelSource[]; }
+```
+`Status.intel` = `{enabled, vix, vix_chg, regime, sources_ok, sources_on}` (drives the top-bar VIX chip). Credentials
+(`REDDIT_CLIENT_ID/SECRET`, `X_BEARER_TOKEN`) are read from `.env` only; the API exposes just `configured: boolean`.
+`intel` items may be re-sent with the same `id` after LLM enrichment (`llm` populated) — clients replace by `id`.
+
 ### Calendar
 | Method | Path | Query/Body | Response |
 |---|---|---|---|
@@ -320,6 +365,8 @@ and `{"pong": 1, "ts": …}` for pings.
 | `llm` | `LlmCallSummary` (each LLM exchange as it completes) | no |
 | `status` | `Status` | yes |
 | `scanner` | `ScanResult` (on each completed scan) | yes |
+| `intel` | `IntelItem` (new post/statement, or re-sent after LLM enrichment) | no |
+| `macro` | `MacroState` (on every VIX / prediction-market / statement change, ≤ 1 per 2 s) | yes |
 
 The server sends `status` immediately after connect. Clients re-subscribe after reconnect
 (`ws.ts` does this automatically).

@@ -55,6 +55,12 @@ CREATE TABLE IF NOT EXISTS llm_calls (
   id TEXT PRIMARY KEY, mode TEXT, t INTEGER, purpose TEXT, model TEXT, latency_ms INTEGER,
   ok INTEGER, request TEXT, response TEXT);
 CREATE INDEX IF NOT EXISTS ix_llm_calls_t ON llm_calls(mode, t);
+CREATE TABLE IF NOT EXISTS intel_items (
+  id TEXT PRIMARY KEY, mode TEXT NOT NULL, t INTEGER NOT NULL, kind TEXT, data TEXT);
+CREATE INDEX IF NOT EXISTS ix_intel_items_t ON intel_items(mode, t);
+CREATE TABLE IF NOT EXISTS intel_pm (
+  mode TEXT NOT NULL, mid TEXT NOT NULL, t INTEGER NOT NULL, p REAL,
+  PRIMARY KEY (mode, mid, t));
 """
 
 MIGRATIONS: dict[str, list[tuple[str, str]]] = {

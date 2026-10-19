@@ -1,8 +1,9 @@
 // Wires the global WS channels into the stores. Called once from main.tsx.
-import type { Account, Decision, FlowEvent, NewsItem, Order, Position, SignalRow, Status } from "../lib/types";
+import type { Account, Decision, FlowEvent, IntelItem, MacroState, NewsItem, Order, Position, SignalRow, Status } from "../lib/types";
 import { channels, ws } from "../lib/ws";
 import { useAccountStore } from "./account";
 import { pushFeed } from "./feeds";
+import { useIntelStore } from "./intel";
 import { useStatusStore } from "./status";
 import { useUiStore } from "./ui";
 import { toast } from "../components/ui/Toast";
@@ -48,6 +49,8 @@ export function startLive(): void {
   ws.subscribe<FlowEvent>(channels.flow, (f) => pushFeed("flow", f));
   ws.subscribe<SignalRow>(channels.signals, (s) => pushFeed("signals", s));
   ws.subscribe<Decision>(channels.decisions, (d) => pushFeed("decisions", d));
+  ws.subscribe<MacroState>(channels.macro, (m) => useIntelStore.getState().setMacro(m));
+  ws.subscribe<IntelItem>(channels.intel, (i) => useIntelStore.getState().pushItem(i));
 
   // Initial REST snapshot, then resync whenever the socket reconnects.
   const loadSettings = () =>

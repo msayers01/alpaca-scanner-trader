@@ -69,8 +69,13 @@ backend/
       news.py             NewsService: ingest, dedupe, lexicon + LLM sentiment → signals
       flow.py             FlowService: options trade classification, sweeps, unusual activity, OFI
       calendar.py         CalendarService: earnings (Nasdaq/Finnhub), FOMC, OPEX, holidays, user events
+    intel/
+      sources.py          Collectors: Reddit (OAuth), ApeWisdom, Stocktwits, X (API v2), RSS (Fed/SEC/White House/
+                          Truth Social archive), Google News mover queries, Polymarket, Kalshi, VIX (Yahoo/CBOE)
+      service.py          IntelService: polls sources, scores/indexes items, macro state, social/statement signals
+      text.py / sim.py    Lexicons, ticker + theme extraction, prediction-market classifier / SIM-mode synthetic intel
     quant/                Pure math, no I/O (see QUANT.md): bs, vol, stats, kelly, option_ev,
-                          indicators, filters, microstructure
+                          indicators, filters, microstructure, sentiment (intel maths)
     signals/
       base.py             SignalModel interface
       library.py          Concrete signal models (momentum, mean-reversion, trend, vol premium, flow,
@@ -138,6 +143,8 @@ data/                     (git-ignored) vantage.db, caches, logs
 | `news` | `NewsItem` | news | |
 | `flow` | `FlowEvent` | flow | |
 | `signal` | `Signal` | signal engine | |
+| `intel` | `IntelItem` | intel service | social post / mover statement (re-sent after LLM scoring) |
+| `macro` | macro state dict | intel service | VIX regime + prediction-market tilt/event risk, conflated |
 | `decision` | `Decision` | autotrader | |
 | `order` | order dict | broker trade_updates | **never dropped** |
 | `account` | account dict | account poller | |
@@ -232,7 +239,8 @@ with κ the fractional-Kelly multiplier; equities use notional (fractional share
 SQLite file `data/vantage.db`, WAL mode. Tables: `kv` (settings), `strategy_config`,
 `risk_config`, `decisions`, `orders`, `positions_meta` (strategy ownership, entry signals, stops),
 `journal` (closed trades + attribution), `news`, `flow`, `signals_log` (for online IC),
-`iv_history` (daily ATM IV per underlying), `events` (user calendar events), `llm_calls`.
+`iv_history` (daily ATM IV per underlying), `events` (user calendar events), `llm_calls`, `intel_items`
+(scored posts/statements, 72 h retention), `intel_pm` (prediction-market probability history, 4 d).
 Schema is created/migrated idempotently at startup (`Store.migrate()`). Every table includes the
 `mode` column so sim/paper/live data never mix.
 
@@ -259,6 +267,20 @@ Algo Trader Plus = SIP + OPRA. Every service degrades gracefully:
 - No LLM running → LLM-gated ideas follow `on_llm_failure`; news uses the lexicon scorer.
 - No Finnhub key → earnings from Nasdaq's public calendar; macro events from the built-in FOMC
   table + computed OPEX/holidays + user-entered events.
+
+## 10a. Intel layer (social, movers, prediction markets, VIX)
+`IntelService` (one task per source, jittered start, exponential back-off while a source keeps failing) feeds three consumers:
+the **signal engine** (`social_sentiment`, `statement_shock`, `vix_regime`, `prediction_tilt`, `event_vol` — QUANT.md §6.6), the
+**LLM dossier** (`dossier()["intel"]`), and the **UI** (`/api/intel/*`, WS `intel` + `macro`, top-bar VIX chip). The
+`intel_catalyst` strategy (QUANT.md §7.2) trades only when ≥ 2 independent sources agree and price confirms.
+* Only documented/public interfaces: no HTML scraping, no logged-in sessions. **X/Twitter** has no free read API and logged-out
+  scraping is blocked and against its terms → X is off until `X_BEARER_TOKEN` is set; Trump's posts come from a Truth Social
+  archive RSS feed instead. **Reddit** blocks many IPs on the public endpoint → set `REDDIT_CLIENT_ID/SECRET` (free script app);
+  ApeWisdom supplies Reddit mention *counts* without touching Reddit.
+* Credentials come from `.env` only and never reach the API. Feed URLs set through the UI are validated (public http(s) only,
+  no loopback/LAN) and parsed with `defusedxml`.
+* A failing source only marks its own status (visible on the Intel page); signals simply go missing — never an exception in the loop.
+* SIM mode swaps every source for `SimIntelSource` so the whole pipeline runs offline (synthetic, independent of sim prices).
 
 ## 11. Testing
 - `backend/tests/test_quant_*.py`: closed-form identities (put-call parity, IV round-trip, Greeks

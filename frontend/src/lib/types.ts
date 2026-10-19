@@ -34,6 +34,8 @@ export interface Status {
     kill_reason: string | null;
   };
   llm: { enabled: boolean; available: boolean; model: string; base_url: string };
+  /** Compact intel state (drives the top-bar VIX chip). */
+  intel?: IntelStatus;
   version: string;
   /** Addition: last account-poll error or null. */
   error?: string | null;
@@ -556,7 +558,7 @@ export interface LlmInfo {
 export interface LlmCallSummary {
   id: string;
   t: number;
-  purpose: string; // "gate" | "news" | "analyst" | "test" | …
+  purpose: string; // "gate" | "news" | "analyst" | "intel" | "test" | …
   model: string;
   latency_ms: number;
   ok: boolean;
@@ -670,4 +672,154 @@ export interface WsPongFrame {
 export interface ApiErrorBody {
   error: string;
   detail: string;
+}
+
+
+// ---------------------------------------------------------------- intel (docs/API.md §Intel)
+export type VixLabel = "calm" | "normal" | "elevated" | "stressed" | "panic";
+
+export interface IntelStatus {
+  enabled: boolean;
+  vix: number | null;
+  vix_chg: number | null;
+  regime: VixLabel | null;
+  sources_ok: number;
+  sources_on: number;
+}
+
+export interface IntelItem {
+  id: string;
+  t: number;
+  kind: "social" | "statement";
+  source: string;
+  author: string;
+  text: string;
+  url: string;
+  symbols: string[];
+  sentiment: number | null;
+  strength: number | null;
+  engagement: number;
+  themes: string[];
+  mover: string | null;
+  weight: number;
+  label: "bullish" | "bearish" | null;
+  llm?: { direction: number; magnitude: number; horizon: string; rationale: string; per_symbol: Record<string, number>; latency_ms: number } | null;
+}
+
+export interface PredictionMarket {
+  id: string;
+  source: "polymarket" | "kalshi";
+  question: string;
+  url: string;
+  p: number;
+  dp24: number;
+  volume24h: number;
+  liquidity: number;
+  end_ms: number | null;
+  themes: string[];
+  polarity: -1 | 0 | 1;
+  weight: number;
+  t: number;
+}
+
+export interface VixRegime {
+  vix: number;
+  prev_close: number | null;
+  chg_1d: number;
+  z_chg: number;
+  chg_5d: number;
+  pct: number;
+  term: number | null;
+  near: number | null;
+  vvix: number | null;
+  skew: number | null;
+  label: VixLabel;
+  risk_on: number;
+  inverted: boolean;
+  t: number;
+}
+
+export interface MacroState {
+  t: number;
+  vix: VixRegime | null;
+  risk_on: number;
+  event_risk: number;
+  prediction: { tilt: number; event_risk: number; n: number; top: { question: string; p: number; dp24: number }[] };
+  statements: { tilt: number; n_eff: number };
+}
+
+export interface SocialStat {
+  symbol: string;
+  n: number;
+  n_eff: number;
+  bull: number;
+  bear: number;
+  polarity: number;
+  attention: number;
+  mentions_24h: number | null;
+  mentions_prev: number | null;
+  rank: number | null;
+  labelled: number;
+  crowded: boolean;
+  sources: Record<string, number>;
+  score_z: number;
+  confidence: number;
+  in_universe?: boolean;
+}
+
+export interface IntelSource {
+  id: string;
+  label: string;
+  kind: "social" | "statement" | "prediction" | "volatility";
+  enabled: boolean;
+  configured: boolean;
+  needs: string | null;
+  note: string;
+  interval_s: number;
+  last_poll: number | null;
+  last_ok: number | null;
+  last_error: string | null;
+  n_total: number;
+  n_last: number;
+}
+
+export interface IntelMover {
+  name: string;
+  weight: number;
+  x?: string;
+  query?: string;
+  enabled?: boolean;
+}
+
+export interface IntelFeed {
+  id: string;
+  label?: string;
+  url: string;
+  mover?: string;
+  weight?: number;
+  enabled?: boolean;
+}
+
+export interface IntelConfig {
+  enabled: boolean;
+  sources: Record<string, boolean>;
+  subreddits: string[];
+  x_handles: string[];
+  movers: IntelMover[];
+  rss: IntelFeed[];
+}
+
+export interface IntelSummary {
+  enabled: boolean;
+  macro: MacroState;
+  markets: PredictionMarket[];
+  statements: IntelItem[];
+  social: SocialStat[];
+  sources: IntelSource[];
+}
+
+export interface IntelSourcesResponse {
+  sources: IntelSource[];
+  config: IntelConfig;
+  enabled: boolean;
 }

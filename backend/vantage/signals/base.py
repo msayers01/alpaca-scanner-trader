@@ -30,6 +30,7 @@ class SignalContext:
     news: Any = None
     flow: Any = None
     calendar: Any = None
+    intel: Any = None
     now: int = 0
     session_open: bool = True
 

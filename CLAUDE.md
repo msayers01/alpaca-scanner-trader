@@ -65,12 +65,18 @@ Production-style single server: `npm run build` then `uv run vantage` serves `fr
 | New strategy | `backend/vantage/strategies/library.py` + `REGISTRY` + QUANT.md §7 + test |
 | New REST route | `backend/vantage/api/routes.py` + API.md + `frontend/src/lib/api.ts` |
 | New WS channel | `backend/vantage/api/ws.py` + API.md + `frontend/src/lib/ws.ts` |
+| New intel source (social / statements / markets / vol) | `backend/vantage/intel/sources.py` (+ `ALL_SOURCES`, `sim.py` stub, mocked-HTTP test in `tests/test_intel.py`, QUANT.md §6.6) |
 | Alpaca endpoint | `backend/vantage/broker/alpaca_rest.py` (only place that knows URLs) |
 | Risk rule | `backend/vantage/execution/risk.py` + `tests/test_risk.py` |
 | Strategy-controlled size / goal halt | `TradeIdea.target_fraction`; `Strategy.should_halt()` (see `strategies/rags.py`) |
 | UI page | `frontend/src/pages/` + route in `App.tsx` + nav + Help page section |
 
 ## Gotchas
+- **Intel sources are public/official APIs only.** Never scrape x.com or logged-in pages (blocked + against ToS): X goes through the
+  v2 API with `X_BEARER_TOKEN`; Trump's posts come from the trumpstruth.org RSS archive; Reddit needs OAuth keys (public JSON is often
+  403) with ApeWisdom as the keyless fallback. Parse feeds with `defusedxml`, validate user-supplied feed URLs (`_check_url`), and
+  never pass credentials to the API/UI. Intel signals are weak/noisy by design (low prior weight, IC-tracked, two-source agreement in
+  `intel_catalyst`) — don't raise their weights or loosen the agreement rule without forward (paper) evidence.
 - Alpaca options stream is **msgpack only**; quotes can't use `*` wildcard (error 413).
 - Free data = IEX + `indicative` options (delayed trades). Flow analytics fall back to snapshots.
 - Free IEX stream: quotes + trades together are capped at ~30 symbols per connection (error `405 symbol limit

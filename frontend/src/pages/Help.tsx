@@ -18,6 +18,7 @@ const TOC: { id: string; title: string; sub?: { id: string; title: string }[] }[
   { id: "risk", title: "Risk parameters" },
   { id: "llm", title: "LLM gate", sub: [{ id: "llm-log", title: "LLM Log" }] },
   { id: "feeds", title: "Feeds & data entitlements" },
+  { id: "intel", title: "Intel: sentiment, movers, VIX & prediction markets" },
   { id: "calendar", title: "Calendar" },
   { id: "backtest", title: "Backtesting, PSR & DSR" },
   { id: "shortcuts", title: "Keyboard shortcuts" },
@@ -367,6 +368,11 @@ IV / RV       = σiv / σforecast                             implied vs our for
                   ["ofi", "Stock order-flow imbalance", "Cont–Kukanov–Stoikov OFI over 5 minutes / depth", "0.1d"],
                   ["news_sentiment", "News sentiment", "Decayed Σ sentiment × relevance (LLM or lexicon), novelty-weighted", "2d"],
                   ["earnings_drift", "Post-earnings drift", "Earnings-day gap ÷ σ, volume-confirmed, decaying over 40 days", "20d"],
+                  ["social_sentiment", "Retail sentiment × attention", "Reddit/Stocktwits/X polarity gated by attention vs baseline; shrunk 60 % when the crowd is loud and one-sided", "2d"],
+                  ["statement_shock", "Statements by market movers", "Decayed market impact of what Trump, the Fed and other configured movers said (symbol, sector or market-wide)", "1d"],
+                  ["vix_regime", "VIX regime", "Risk-on score from VIX level, 1-day spike and VIX3M/VIX term structure, scaled by the symbol's beta to SPY", "5d"],
+                  ["prediction_tilt", "Prediction markets", "Net equity tilt from repriced Polymarket/Kalshi macro markets (recession, tariffs, ceasefire…), scaled by beta", "10d"],
+                  ["event_vol", "Event volatility risk", "Not directional: uncertain / fast-repricing prediction markets plus VIX stress", "5d"],
                 ].map(([id, idea, stat, h]) => (
                   <tr key={id}>
                     <td>
@@ -418,6 +424,7 @@ P(up)    = N(E[r_h] / σ_h)
                   ["ETF Pullback Reversion (meanrev_etf)", "equity · swing", "SPY/QQQ/IWM/sector ETFs above SMA200 with RSI(2) < 10 or IBS < 0.2", "Close above the 5-day SMA or 5-day time stop"],
                   ["Opening-Range Breakout (orb_intraday)", "equity/option · intraday", "5-minute ORB on the top relative-volume names, direction of the first candle", "Stop at the opposite side of the range; flat by the close. Skipped only if day trades are disabled in the risk settings."],
                   ["LLM Analyst (llm_analyst)", "option · swing", "Top ensemble names; the LLM gets the full dossier and must approve", "Standard exit policy"],
+                  ["Sentiment & Macro Catalyst (intel_catalyst)", "option · swing · off by default", "≥ 2 independent intel sources agree (retail sentiment, mover statements, prediction markets, VIX regime) — at least one social or statement — AND price already moves 0.3–6 % the same way; LLM gate on", "Stop −35 %, target +80 %, trailing stop, 5-day time stop, urgent exit if a mover statement turns against it. Bullish entries blocked in a VIX panic, halved when stressed"],
                   ["Rags to Riches (rags_to_riches)", "equity/option · intraday · HIGH RISK", "Best of ORB / VWAP pullback / high-low-of-day momentum on leveraged ETFs, in-play names and cheap 0–2 DTE SPY/QQQ options; compounds most of the balance per trade", "R-multiple target, stop, trailing after +1R, max hold, flat by the close; stops at your $ goal or floor"],
                 ].map(([n, a, e, x]) => (
                   <tr key={n}>
@@ -645,6 +652,42 @@ P(up)    = N(E[r_h] / σ_h)
               </tbody>
             </table>
             <p>Choose feeds in Settings; they must match your Alpaca data subscription.</p>
+          </Sec>
+
+          <Sec id="intel" title="Intel: sentiment, movers, VIX & prediction markets">
+            <p>
+              The <Link to="/intel">Intel</Link> page collects information from outside the price tape and turns it into signals. The top-bar <strong>VIX chip</strong> and the Dashboard
+              <em> Market regime</em> card summarise it. Everything is advisory input: signals feed the ensemble (and the optional LLM gate), and only strategies — through the risk
+              manager — can trade.
+            </p>
+            <ul>
+              <li>
+                <strong>Movers</strong> — statements by Donald Trump (Truth Social archive feed), the Federal Reserve, the White House, the SEC and any people you add (headlines via
+                Google News; posts on X if you provide an API token). Each statement gets a market-impact estimate (lexicon, replaced by the LLM when it is running). Market-wide
+                statements move every symbol in proportion to its beta; sector statements (tariffs, chips, oil…) hit the most exposed tickers harder.
+              </li>
+              <li>
+                <strong>Social</strong> — Stocktwits posts (with the author's own bullish/bearish tag), Reddit posts and mention counts, optionally X cashtags. Polarity only counts when
+                <em> attention</em> is above normal, and a loud one-sided crowd is flagged <span className="badge warn">crowded</span> and discounted — retail extremes tend to reverse.
+              </li>
+              <li>
+                <strong>Prediction markets</strong> — Polymarket and Kalshi odds for recession, Fed decisions, tariffs, shutdowns, ceasefires… Repricing moves the tilt; uncertain
+                markets that resolve soon raise <em>event risk</em>.
+              </li>
+              <li>
+                <strong>VIX</strong> — level, one-day spike, term structure (VIX3M/VIX; backwardation = stress), VVIX and SKEW. Regime: calm → normal → elevated → stressed → panic.
+              </li>
+            </ul>
+            <div className="callout">
+              <strong>Data access.</strong> Only public or official interfaces are used. X (Twitter) has no free read API and scraping x.com is blocked and against its terms, so it stays off
+              until <code>X_BEARER_TOKEN</code> is set. Reddit blocks many addresses on its public endpoint — add <code>REDDIT_CLIENT_ID</code>/<code>REDDIT_CLIENT_SECRET</code> for reliable
+              access. Keys live in the backend <code>.env</code> only. Check each source's health on Intel → Sources.
+            </div>
+            <p>
+              <strong>Sentiment &amp; Macro Catalyst</strong> (Auto-trader page, off by default) trades only when at least two independent sources agree and price confirms, never buys
+              calls into a VIX panic, and shrinks size when volatility is stressed or event risk is high. These signals have no history to backtest, so judge them forward on paper: the
+              Signals page shows each model's measured information coefficient once enough data accrues. Lexicon scoring cannot read sarcasm; treat social data as a weak, noisy input.
+            </p>
           </Sec>
 
           <Sec id="calendar" title="Calendar">

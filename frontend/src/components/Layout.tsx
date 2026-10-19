@@ -7,6 +7,7 @@ import { useAccountStore } from "../store/account";
 import { useStatusStore } from "../store/status";
 import { ws } from "../lib/ws";
 import { ConnectionDot, ModeBadge, SessionIndicator } from "./StatusBits";
+import { VixChip } from "./VixChip";
 import { SymbolSearch } from "./SymbolSearch";
 import { Icon, type IconName } from "./ui/Icon";
 import { Loading } from "./ui/States";
@@ -17,6 +18,7 @@ const NAV: { to: string; label: string; icon: IconName; key?: string; end?: bool
   { to: "/symbol", label: "Symbol", icon: "symbol" },
   { to: "/scanner", label: "Scanner", icon: "scanner", key: "s" },
   { to: "/feeds", label: "Feeds", icon: "feeds", key: "f" },
+  { to: "/intel", label: "Intel", icon: "pulse", key: "i" },
   { to: "/autotrader", label: "Auto-trader", icon: "bot", key: "a" },
   { to: "/calendar", label: "Calendar", icon: "calendar", key: "c" },
   { to: "/backtest", label: "Backtest", icon: "backtest", key: "b" },
@@ -134,6 +136,7 @@ export function Layout() {
         <SymbolSearch />
         <div className="spacer" />
         <div className="topbar-group hide-sm">
+          <VixChip />
           <SessionIndicator />
         </div>
         <div className="topbar-group">

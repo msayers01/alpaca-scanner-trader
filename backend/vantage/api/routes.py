@@ -394,6 +394,59 @@ async def flow(request: Request, underlying: str | None = None, limit: int = 200
     return J([e.to_wire() for e in C(request).flow.recent(underlying.upper() if underlying else None, min(limit, 1000))])
 
 
+# ============================================================================ intel
+@router.get("/intel/summary")
+async def intel_summary(request: Request) -> JSON:
+    return J(C(request).intel.summary())
+
+
+@router.get("/intel/items")
+async def intel_items(request: Request, kind: str | None = None, symbol: str | None = None, mover: str | None = None,
+                      limit: int = 100) -> JSON:
+    if kind not in (None, "social", "statement"):
+        return err("bad_kind", "kind must be social or statement")
+    items = C(request).intel.recent(kind, symbol.upper() if symbol else None, mover, max(1, min(limit, 500)))
+    return J([i.to_wire() for i in items])
+
+
+@router.get("/intel/markets")
+async def intel_markets(request: Request, limit: int = 60) -> JSON:
+    return J(C(request).intel.markets_wire(max(1, min(limit, 200))))
+
+
+@router.get("/intel/social")
+async def intel_social(request: Request, symbol: str | None = None, limit: int = 30) -> JSON:
+    svc = C(request).intel
+    if symbol:
+        return J(svc.social_stats(symbol.upper()))
+    return J(svc.leaderboard(max(1, min(limit, 100))))
+
+
+@router.get("/intel/sources")
+async def intel_sources(request: Request) -> JSON:
+    svc = C(request).intel
+    return J({"sources": svc.sources_wire(), "config": svc.config_wire(), "enabled": svc.enabled})
+
+
+@router.put("/intel/config")
+async def intel_config(request: Request, body: dict[str, Any] = Body(...)) -> JSON:
+    svc = C(request).intel
+    try:
+        svc.update_config(body)
+    except (ValueError, TypeError) as e:
+        return err("bad_config", str(e))
+    return J({"sources": svc.sources_wire(), "config": svc.config_wire(), "enabled": svc.enabled})
+
+
+@router.post("/intel/refresh")
+async def intel_refresh(request: Request, body: dict[str, Any] = Body(default={})) -> JSON:
+    svc = C(request).intel
+    sid = body.get("source")
+    if sid is not None and sid not in svc.sources:
+        return err("not_found", f"unknown source {sid}", 404)
+    return J(await svc.refresh(sid))
+
+
 # ============================================================================ calendar
 @router.get("/calendar")
 async def calendar(request: Request, start: str | None = None, end: str | None = None) -> JSON:

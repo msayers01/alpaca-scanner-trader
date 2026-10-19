@@ -34,6 +34,13 @@ class Settings(BaseSettings):
 
     finnhub_api_key: str = ""
 
+    # intel sources (all optional; keys live in .env only and are never sent to the UI)
+    intel_enabled: bool = True
+    reddit_client_id: str = ""
+    reddit_client_secret: str = ""
+    reddit_user_agent: str = ""
+    x_bearer_token: str = ""
+
     host: str = "127.0.0.1"
     port: int = 8765
     ws_flush_ms: int = 50
@@ -62,6 +69,12 @@ class Settings(BaseSettings):
     @property
     def live_allowed(self) -> bool:
         return self.allow_live_trading and self.live_keys
+
+    @property
+    def intel_env(self) -> dict[str, str]:
+        """Credentials handed to the intel collectors (backend only)."""
+        return {"REDDIT_CLIENT_ID": self.reddit_client_id, "REDDIT_CLIENT_SECRET": self.reddit_client_secret,
+                "REDDIT_USER_AGENT": self.reddit_user_agent, "X_BEARER_TOKEN": self.x_bearer_token}
 
     def keys_for(self, mode: str) -> tuple[str, str]:
         if mode == "paper":

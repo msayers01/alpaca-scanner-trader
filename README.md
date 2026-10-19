@@ -4,11 +4,16 @@ A locally hosted, quantitative trading workstation for **Alpaca**:
 
 - **Options scanner** for long calls and puts, ranked by *physical-measure expected value* at your
   planned exit horizon (net of spread and theta), probability of profit and Kelly sizing.
-- **Signal engine** fusing 12 models — momentum, Kalman trend, short-term reversal, breakouts,
+- **Signal engine** fusing 17 models — momentum, Kalman trend, short-term reversal, breakouts,
   relative strength, VWAP reversion, opening-range breakout, options order flow (sweeps,
   aggressor side), stock order-flow imbalance, news sentiment (LLM or lexicon), post-event drift and
-  the volatility risk premium — into an IC-weighted ensemble forecast.
-- **Auto-trader** with seven preset strategies, account-size tiers ($500 → $25k+), fractional
+  the volatility risk premium, plus the **Intel** models below — into an IC-weighted ensemble forecast.
+- **Intel** (Intel page): VIX regime and term structure, statements by market movers (Trump via a Truth Social
+  archive feed, the Fed, White House, SEC, plus configurable people), Reddit / Stocktwits / X sentiment and
+  attention, and Polymarket / Kalshi prediction markets → five signal models, a market-regime card, a top-bar
+  VIX chip and the optional **Sentiment & Macro Catalyst** strategy (needs ≥ 2 agreeing sources + price
+  confirmation). Only public/official APIs are used; X and Reddit's own API need keys (see `.env.example`).
+- **Auto-trader** with nine preset strategies, account-size tiers ($500 → $25k+), fractional
   Kelly sizing, hard risk limits, daily-loss and drawdown kill switches, smart limit
   order execution, and a full decision log explaining every action.
 - **Local LLM gate** (Ollama / Qwen or any OpenAI-compatible server): reviews trade dossiers and can

@@ -44,6 +44,7 @@ class StrategyContext:
     backtest: bool = False
     owned: dict[str, str] = field(default_factory=dict)  # symbol -> strategy_id for positions Vantage opened
     today: dict[str, dict[str, Any]] = field(default_factory=dict)  # strategy_id -> {entries, last_entry_t, ...}
+    intel: Any = None  # IntelService (social / statements / VIX / prediction markets); None in backtests
 
     @property
     def session_open(self) -> bool:
@@ -192,6 +193,7 @@ def dossier(ctx: StrategyContext, symbol: str, idea: TradeIdea | None = None) ->
                   "llm": (n.llm or {}).get("rationale")} for n in news],
         "options_flow": {k: (round(v, 2) if isinstance(v, float) else v) for k, v in flow.items()},
         "events": {"days_to_earnings": de},
+        "intel": ctx.intel.dossier(symbol) if getattr(ctx, "intel", None) else None,
         "portfolio": {"equity": round(ctx.account.get("equity", 0), 2), "open_positions": len(ctx.positions),
                       "tier": ctx.tier},
     }

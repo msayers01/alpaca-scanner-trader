@@ -53,6 +53,7 @@ class SignalEngine:
         bus: Bus,
         mode: str,
         symbols_fn: Callable[[], list[str]],
+        intel: Any = None,
     ):
         self.market = market
         self.options = options
@@ -63,6 +64,7 @@ class SignalEngine:
         self.bus = bus
         self.mode = mode
         self.symbols_fn = symbols_fn
+        self.intel = intel
         self.latest: dict[tuple[str, str], Signal] = {}
         self.vol_forecast: dict[str, float] = {}
         self.realized_vol: dict[str, float] = {}
@@ -118,10 +120,12 @@ class SignalEngine:
             self.vol_forecast.update({s: v[0] for s, v in vols.items() if math.isfinite(v[0])})
             self.realized_vol.update({s: v[1] for s, v in vols.items() if math.isfinite(v[1])})
             xs = _cross_sectional(arrays)
+            betas = _betas(arrays)
             for s, arr in arrays.items():
                 d = self._data.get(s) or SymbolData(s, float(arr["c"][-1]), arr)
                 d.daily = arr
                 d.extra.update(xs.get(s, {}))
+                d.extra["beta"] = betas.get(s, 1.0)
                 self._data[s] = d
         for s in symbols:
             d = self._data.get(s)
@@ -162,7 +166,7 @@ class SignalEngine:
         symbols = sorted(set(symbols))
         await self._build(symbols, full)
         ms = clock.market_state()
-        ctx = SignalContext(news=self.news, flow=self.flow, calendar=self.calendar, now=now_ms(),
+        ctx = SignalContext(news=self.news, flow=self.flow, calendar=self.calendar, intel=self.intel, now=now_ms(),
                             session_open=ms.is_open or self.mode == "sim")
         now = ctx.now
         for s in symbols:
@@ -330,6 +334,25 @@ def _cross_sectional(arrays: dict[str, dict[str, np.ndarray]]) -> dict[str, dict
     if sd <= 0:
         return {}
     return {s: {"xs_rs_z": (v - mu) / sd, "xs_excess": round(v, 4)} for s, v in ex.items()}
+
+
+def _betas(arrays: dict[str, dict[str, np.ndarray]], window: int = 60) -> dict[str, float]:
+    """OLS beta of each symbol's daily log returns on SPY's over the last ``window`` sessions (1.0 when SPY is missing)."""
+    spy = arrays.get("SPY")
+    if spy is None or len(spy["c"]) < window + 2:
+        return {}
+    rm = np.diff(np.log(spy["c"][-(window + 1):]))
+    var = float(np.var(rm, ddof=1))
+    if var <= 0:
+        return {}
+    out = {}
+    for s, a in arrays.items():
+        c = a["c"]
+        if len(c) < window + 1:
+            continue
+        r = np.diff(np.log(c[-(window + 1):]))
+        out[s] = max(-3.0, min(3.0, float(np.cov(r, rm, ddof=1)[0, 1] / var)))
+    return out
 
 
 def _compute_ic(rows: list[dict[str, Any]], mode: str) -> dict[str, ICStat]:

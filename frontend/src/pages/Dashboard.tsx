@@ -6,6 +6,7 @@ import { DecisionItem } from "../components/DecisionItem";
 import { OrdersTable } from "../components/OrdersTable";
 import { PositionsTable } from "../components/PositionsTable";
 import { Watchlist } from "../components/Watchlist";
+import { MarketRegimeCard } from "../components/IntelCards";
 import { Empty, ErrorBox, Loading, Tip } from "../components/ui/States";
 import { fmtAgo, fmtUsd } from "../lib/format";
 import { useNow } from "../hooks/useNow";
@@ -149,6 +150,7 @@ export default function Dashboard() {
         </div>
         <aside className="stack">
           <AutoTraderCard />
+          <MarketRegimeCard />
           <div className="card">
             <div className="card-header">
               <span className="card-title">Watchlist</span>

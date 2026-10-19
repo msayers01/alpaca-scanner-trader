@@ -21,6 +21,7 @@ from vantage.data.market import MarketDataService
 from vantage.data.news import NewsService
 from vantage.data.options import OptionsService
 from vantage.execution.engine import ExecutionEngine
+from vantage.intel.service import IntelService
 from vantage.llm.gateway import LLMGateway
 from vantage.scanner.options_scanner import OptionsScanner
 from vantage.signals.engine import SignalEngine
@@ -63,8 +64,10 @@ class Container:
         self.news = NewsService(self.broker, bus, store, mode, self.llm)
         self.flow = FlowService(bus, store, mode, self.options)
         self.calendar = CalendarService(store, mode, settings.finnhub_api_key)
+        self.intel = IntelService(bus, store, mode, settings.intel_env, self.signal_symbols, self.llm,
+                                  enabled=settings.intel_enabled)
         self.signals = SignalEngine(self.market, self.options, self.news, self.flow, self.calendar, store, bus, mode,
-                                    self.signal_symbols)
+                                    self.signal_symbols, intel=self.intel)
         self.scanner = OptionsScanner(self.market, self.options, self.signals, self.calendar, self.flow, bus,
                                       self.universe, self.watchlist, settings.risk_free_rate, mode)
         self.execution = ExecutionEngine(self.broker, bus, store, mode, self.quote_for)
@@ -154,6 +157,7 @@ class Container:
         await self.flow.start(self._universe, realtime=bool(getattr(self.broker, "flow_realtime", False)),
                               broker=self.broker)
         await self.calendar.start(syms)
+        await self.intel.start()
         await self.execution.start()
         await self.signals.start()
         await self.scanner.start()
@@ -168,8 +172,8 @@ class Container:
             with contextlib.suppress(asyncio.CancelledError):
                 await t
         self._tasks.clear()
-        for svc in (self.autotrader, self.scanner, self.signals, self.execution, self.calendar, self.flow, self.news,
-                    self.market):
+        for svc in (self.autotrader, self.scanner, self.signals, self.execution, self.intel, self.calendar, self.flow,
+                    self.news, self.market):
             try:
                 await svc.stop()
             except Exception:  # noqa: BLE001
@@ -252,6 +256,7 @@ class Container:
                 "killed": self.autotrader.risk.killed,
                 "kill_reason": self.autotrader.risk.kill_reason,
             },
+            "intel": self.intel.status_bits(),
             "llm": {"enabled": self.llm.enabled, "available": self.llm.available, "model": self.llm.model,
                     "base_url": self.llm.base_url},
             "version": __version__,

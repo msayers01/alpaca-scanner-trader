@@ -479,9 +479,10 @@ def _json(d: Any) -> str:
     return dumps(sanitize(d)).decode()
 
 
+from vantage.strategies.intel import IntelCatalyst  # noqa: E402  (separate module, imports base only)
 from vantage.strategies.rags import RagsToRiches  # noqa: E402  (separate module, imports base only)
 
 REGISTRY: dict[str, type[Strategy]] = {
     s.id: s for s in (OptionsEdge, FlowFollow, EarningsDrift, TsmomEquity, MeanrevETF, OrbIntraday, LLMAnalyst,
-                      RagsToRiches)
+                      RagsToRiches, IntelCatalyst)
 }

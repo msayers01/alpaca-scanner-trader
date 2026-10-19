@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard";
 const SymbolPage = lazy(() => import("./pages/Symbol"));
 const Scanner = lazy(() => import("./pages/Scanner"));
 const Feeds = lazy(() => import("./pages/Feeds"));
+const Intel = lazy(() => import("./pages/Intel"));
 const AutoTrader = lazy(() => import("./pages/AutoTrader"));
 const CalendarPage = lazy(() => import("./pages/Calendar"));
 const Backtest = lazy(() => import("./pages/Backtest"));
@@ -38,6 +39,8 @@ const router = createBrowserRouter([
           { path: "scanner", element: <Scanner /> },
           { path: "feeds", element: <Feeds /> },
           { path: "feeds/:tab", element: <Feeds /> },
+          { path: "intel", element: <Intel /> },
+          { path: "intel/:tab", element: <Intel /> },
           { path: "autotrader", element: <AutoTrader /> },
           { path: "calendar", element: <CalendarPage /> },
           { path: "backtest", element: <Backtest /> },
