@@ -84,7 +84,7 @@ backend/
       library.py          Preset strategies
       presets.py          Account tiers + per-tier strategy/risk presets
     execution/
-      risk.py             RiskManager: pre-trade checks, sizing, PDT guard, kill switch
+      risk.py             RiskManager: pre-trade checks, sizing, day-trade policy, kill switch
       engine.py           ExecutionEngine: smart limit orders (mid → ladder), cancel/replace, fills
     autotrader/
       engine.py           AutoTrader loop: universe → ideas → LLM gate → risk → execute; exits
@@ -219,8 +219,10 @@ Every `cycle_seconds` (default 30 s during market hours):
 Hard checks (any failure = reject): mode/arming, market session & entry windows, max open
 positions, max positions per underlying, per-trade risk budget, max position % of equity, max
 options allocation %, buying power, daily trade cap, daily-loss kill switch, drawdown kill switch,
-PDT guard (uses the broker's `daytrade_count` / `pattern_day_trader` / equity fields rather than
-hard-coding the rule, so it stays correct if FINRA rules change), liquidity (spread %, OI, volume),
+day-trade policy (unlimited by default — FINRA eliminated the PDT rule effective 2026-06-04; if the
+broker still rejects an order under legacy PDT protection during its transition, which may run to
+2027-10-20, intraday entries pause and same-day exits fall back to the legacy allowance for the
+session; stop-loss exits always go out), liquidity (spread %, OI, volume),
 earnings blackout, duplicate-order guard.
 Sizing: `contracts = floor(min(kelly_f × κ × equity, risk_budget, max_position) / (premium × 100))`
 with κ the fractional-Kelly multiplier; equities use notional (fractional shares) for small accounts.

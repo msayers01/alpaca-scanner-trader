@@ -4,7 +4,7 @@ from datetime import date, timedelta
 
 from vantage.core import clock
 from vantage.core.types import OptionContract, TradeIdea
-from vantage.execution.risk import RiskManager, can_close_same_day, daytrade_capable
+from vantage.execution.risk import RiskManager, can_close_same_day, daytrade_capable, is_pdt_rejection
 
 MS = clock.MarketState(True, "regular", 0, 0, 0, 120.0, 200.0)
 
@@ -84,15 +84,32 @@ def test_kill_switch_daily_loss_and_drawdown():
     assert "kill switch" in rm.size_and_check(opt_idea(), account(), [], set(), MS)[1]
 
 
-def test_pdt_guards():
-    assert not daytrade_capable(account(10_000), "auto")
-    assert daytrade_capable(account(30_000), "auto")
-    assert not daytrade_capable(account(30_000), "never")
-    assert can_close_same_day(account(10_000, daytrade_count=2), "auto")
-    assert not can_close_same_day(account(10_000, daytrade_count=3), "auto")
+def test_day_trading_unlimited_since_pdt_elimination():
+    # FINRA removed the PDT rule effective 2026-06-04: small accounts may day trade without a count limit
+    assert daytrade_capable(account(1_000), "auto")
+    assert can_close_same_day(account(1_000, daytrade_count=12), "auto")
     rm = RiskManager({}, "paper")
+    assert rm.size_and_check(opt_idea(), account(10_000), [], set(), MS, intraday=True)[0] is not None
+    # user preference still honoured
+    assert not daytrade_capable(account(100_000), "never")
+    rm = RiskManager({"allow_daytrades": "never"}, "paper")
     plan, why = rm.size_and_check(opt_idea(), account(10_000), [], set(), MS, intraday=True)
-    assert plan is None and "day-trading" in why
+    assert plan is None and "disabled" in why
+
+
+def test_falls_back_to_legacy_allowance_if_broker_still_enforces_pdt():
+    assert is_pdt_rejection("trade denied due to pattern day trading protection")
+    assert not is_pdt_rejection("insufficient buying power")
+    assert not is_pdt_rejection("insufficient day trading buying power")  # intraday margin, not PDT
+    assert not daytrade_capable(account(10_000), "auto", broker_pdt=True)
+    assert daytrade_capable(account(30_000), "auto", broker_pdt=True)
+    assert daytrade_capable(account(10_000), "always", broker_pdt=True)
+    assert can_close_same_day(account(10_000, daytrade_count=2), "auto", broker_pdt=True)
+    assert not can_close_same_day(account(10_000, daytrade_count=3), "auto", broker_pdt=True)
+    rm = RiskManager({}, "paper")
+    rm.broker_pdt = True
+    plan, why = rm.size_and_check(opt_idea(), account(10_000), [], set(), MS, intraday=True)
+    assert plan is None and "legacy PDT" in why
 
 
 def test_earnings_blackout_unless_event_strategy():

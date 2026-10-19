@@ -21,7 +21,6 @@ function AccountStats() {
   const a = useAccountStore((s) => s.account);
   const err = useAccountStore((s) => s.error);
   if (!a) return err ? <ErrorBox error={err} onRetry={() => void useAccountStore.getState().loadAll()} /> : <div className="stats skeleton" style={{ height: 64 }} />;
-  const pdtLimited = !a.pattern_day_trader && a.equity < 25_000;
   return (
     <div className="stats">
       <div className="stat">
@@ -40,17 +39,16 @@ function AccountStats() {
       <div className="stat">
         <div className="label">
           Day trades
-          <Tip text="Round-trip day trades in the last 5 business days. Under $25k equity, a 4th day trade flags the account as a pattern day trader. The risk manager reads this from the broker." />
+          <Tip text="Same-day round trips in the last 5 business days, as reported by the broker (for reference only). FINRA eliminated the pattern-day-trader rule and its $25k minimum effective June 4, 2026, so there is no day-trade limit. If your broker still enforces the old protection during its transition, the auto-trader detects the rejection and backs off." />
         </div>
-        <div className={`value ${pdtLimited && a.daytrade_count >= 3 ? "warn-text" : ""}`}>
-          {a.daytrade_count}
-          {pdtLimited ? " / 3" : ""}
+        <div className="value">{a.daytrade_count}</div>
+        <div className={`hint ${a.pattern_day_trader ? "warn-text" : ""}`}>
+          {a.pattern_day_trader ? "Broker legacy PDT flag" : "Last 5 days · no limit"}
         </div>
-        <div className="hint">{a.pattern_day_trader ? "PDT flagged" : pdtLimited ? "5-day window" : "Unrestricted"}</div>
       </div>
       <div className="stat">
         <div className="label">
-          Tier <Tip text="Account tier by equity. Selects default strategies and risk presets (see Help → Account tiers)." />
+          Tier <Tip text="Account tier by equity. Selects default strategies and risk presets — position count, risk per trade and Kelly multiplier scale with account size (see Help → Account tiers)." />
         </div>
         <div className="value" style={{ textTransform: "capitalize" }}>
           {a.tier}

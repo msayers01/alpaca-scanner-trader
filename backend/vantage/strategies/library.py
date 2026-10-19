@@ -341,7 +341,7 @@ class OrbIntraday(Strategy):
     name = "Opening-Range Breakout"
     description = ("Intraday: trades the break of the first 5-minute range in the direction of the first candle on "
                    "names with high relative volume; stop at the opposite side of the range, flat by the close. "
-                   "Requires day-trading capacity.")
+                   "Skipped if day trades are disabled in the risk settings.")
     asset_class = "equity"
     style = "intraday"
     params_schema = [

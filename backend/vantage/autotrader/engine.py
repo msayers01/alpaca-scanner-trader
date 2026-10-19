@@ -2,7 +2,8 @@
 
 manage exits → generate ideas → rank → LLM gate (veto/shrink only) → risk sizing → execute.
 Every step emits a Decision. Entries require ``armed``; exits of positions the auto-trader opened
-run whenever the loop runs (risk-reducing), subject to the PDT same-day guard.
+run whenever the loop runs (risk-reducing). Day trades are unlimited (PDT rule eliminated 2026-06-04) unless
+the user disables them or the broker rejects an order under legacy PDT protection.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from vantage.core.store import Store
 from vantage.core.types import Decision, ManagedPosition, TradeIdea, parse_occ
 from vantage.core.util import dumps, loads, new_id, now_ms, sanitize
 from vantage.execution.engine import ExecutionEngine, WorkingOrder
-from vantage.execution.risk import RISK_SCHEMA, RiskManager, can_close_same_day
+from vantage.execution.risk import RISK_SCHEMA, RiskManager, can_close_same_day, is_pdt_rejection
 from vantage.llm import prompts
 from vantage.strategies.base import Strategy, StrategyContext, dossier
 from vantage.strategies.library import REGISTRY
@@ -238,10 +239,12 @@ class AutoTrader:
             if sig is None:
                 continue
             opened_today = m.get("entry_t") and _et_date(m["entry_t"]) == clock.today_et()
-            if opened_today and self.mode != "sim" and not can_close_same_day(account, self.risk.cfg["allow_daytrades"]):
-                if not (sig.urgent and p["unrealized_plpc"] < -0.6):
-                    self._decide(strat.id, p["symbol"], "skip", f"exit deferred to next session (PDT guard): {sig.reason}")
-                    continue
+            if opened_today and self.mode != "sim" and not sig.urgent and not can_close_same_day(
+                    account, self.risk.cfg["allow_daytrades"], self.risk.broker_pdt):
+                why = ("day trades disabled in risk settings" if self.risk.cfg["allow_daytrades"] == "never"
+                       else "broker enforcing legacy PDT protection")
+                self._decide(strat.id, p["symbol"], "skip", f"exit deferred to next session ({why}): {sig.reason}")
+                continue
             if not self.armed and not self.manage_exits_when_disarmed:
                 continue
             qty = p["qty"] * sig.pct
@@ -259,7 +262,16 @@ class AutoTrader:
                 asyncio.create_task(self._clear_exit_pending(p["symbol"], w))
             except Exception as e:  # noqa: BLE001
                 self._exit_pending.discard(p["symbol"])
+                self._note_pdt_rejection(e)
                 self._decide(strat.id, p["symbol"], "error", f"exit order failed: {e}")
+
+    def _note_pdt_rejection(self, e: Exception) -> None:
+        """PDT was eliminated (2026-06-04) but brokers may enforce legacy protection until 2027-10-20. If ours
+        rejects an order for that reason, fall back to the legacy day-trade allowance for this session."""
+        if not self.risk.broker_pdt and is_pdt_rejection(str(e)):
+            self.risk.broker_pdt = True
+            self._decide("system", "-", "error", "broker rejected an order under legacy PDT protection — "
+                         "intraday strategies paused and same-day exits limited to the broker allowance this session")
 
     async def _clear_exit_pending(self, sym: str, w: WorkingOrder) -> None:
         with contextlib.suppress(TimeoutError):
@@ -354,6 +366,7 @@ class AutoTrader:
                     timeout_s=self.risk.cfg["order_timeout_s"], meta=meta, ref_price=plan.limit_price,
                 )
             except Exception as e:  # noqa: BLE001
+                self._note_pdt_rejection(e)
                 self._decide(idea.strategy_id, idea.symbol, "error", f"order failed: {e}", idea=idea, llm=llm_info)
                 continue
             self.risk.record_entry()

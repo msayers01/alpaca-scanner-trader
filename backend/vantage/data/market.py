@@ -319,10 +319,8 @@ class MarketDataService:
                     merged[b.t] = b
             bars = sorted(merged.values(), key=lambda b: b.t)
         if symbol not in self.prev_close:
-            try:
+            with contextlib.suppress(BrokerError):
                 await self.refresh_snapshots([symbol])
-            except BrokerError:
-                pass
         pc = self.prev_close.get(symbol)
         return {
             "symbol": symbol,

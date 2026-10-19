@@ -158,7 +158,7 @@ prior weights with strength `λ = 30/(30 + n_obs)`. Forecast:
 | `earnings_drift` | Post-Earnings Drift | option/equity | swing | 1–3 days after earnings: gap ≥ 1.5σ with rel. volume ≥ 2, LLM reads headline | time stop 20 days, stop at gap-fill |
 | `tsmom_equity` | Vol-Targeted Trend | equity | swing | `tsmom` + `trend_kalman` agree; sized to target 15 % annual vol per position (fractional) | signal flip, 3·ATR trailing stop |
 | `meanrev_etf` | ETF Pullback Reversion | equity | swing | SPY/QQQ/IWM/sector ETFs above SMA200, RSI(2) < 10 or IBS < 0.2 | close > 5-day SMA or 5-day time stop |
-| `orb_intraday` | Opening-Range Breakout | equity/option | intraday | 5-min ORB on top relative-volume names, direction = first candle | stop at OR opposite side, EOD flat; **requires day-trading capacity** |
+| `orb_intraday` | Opening-Range Breakout | equity/option | intraday | 5-min ORB on top relative-volume names, direction = first candle | stop at OR opposite side, EOD flat |
 | `llm_analyst` | LLM Analyst | option | swing | Top-N ensemble names → LLM receives full dossier and must approve | standard exit policy |
 
 All strategies expose their thresholds as `ParamSpec`s (editable in the UI).
@@ -167,10 +167,16 @@ All strategies expose their thresholds as `ParamSpec`s (editable in the UI).
 
 | Tier | Equity | Enabled by default | Key risk settings |
 |---|---|---|---|
-| `micro` | < $2,000 | `tsmom_equity` (fractional), `meanrev_etf`, `options_edge` (only premium ≤ 10 % of equity) | max 3 positions, risk/trade 5 %, κ = 0.20, no day trades, options alloc ≤ 40 % |
+| `micro` | < $2,000 | `tsmom_equity` (fractional), `meanrev_etf`, `options_edge` (only premium ≤ 10 % of equity) | max 3 positions, risk/trade 5 %, κ = 0.20, options alloc ≤ 40 % |
 | `small` | $2k–$10k | + `flow_follow`, `earnings_drift` | max 5 positions, risk/trade 3 %, κ = 0.25 |
-| `growth` | $10k–$25k | all swing strategies | max 8 positions, risk/trade 2 %, κ = 0.25, day trades only within broker allowance |
-| `pro` | ≥ $25k | all incl. `orb_intraday` | max 12 positions, risk/trade 1.5 %, κ = 0.30 |
+| `growth` | $10k–$25k | all incl. `llm_analyst`, `orb_intraday` | max 8 positions, risk/trade 2 %, κ = 0.25 |
+| `pro` | ≥ $25k | all | max 12 positions, risk/trade 1.5 %, κ = 0.30, 2 per underlying |
+
+Day trading: FINRA eliminated the pattern-day-trader rule (no $25k minimum, no day-trade count) effective
+2026-06-04 (Regulatory Notice 26-10); intraday margin is enforced by the broker via buying power. Tiers are
+purely a sizing concept. Because firms may keep legacy PDT protection until 2027-10-20, `allow_daytrades=auto`
+trades freely but, after the first broker rejection mentioning PDT, pauses intraday strategies and limits
+same-day exits to the legacy 3-per-5-days allowance for the rest of the session.
 
 Small accounts get *higher* per-trade risk percentages (otherwise no contract is affordable) but
 fewer concurrent positions and a lower Kelly multiplier. Option strategies pick the best contract the

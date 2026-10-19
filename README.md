@@ -9,7 +9,7 @@ A locally hosted, quantitative trading workstation for **Alpaca**:
   aggressor side), stock order-flow imbalance, news sentiment (LLM or lexicon), post-event drift and
   the volatility risk premium — into an IC-weighted ensemble forecast.
 - **Auto-trader** with seven preset strategies, account-size tiers ($500 → $25k+), fractional
-  Kelly sizing, hard risk limits, PDT guard, daily-loss and drawdown kill switches, smart limit
+  Kelly sizing, hard risk limits, daily-loss and drawdown kill switches, smart limit
   order execution, and a full decision log explaining every action.
 - **Local LLM gate** (Ollama / Qwen or any OpenAI-compatible server): reviews trade dossiers and can
   veto or shrink trades — never enlarge them — and turns news into structured signals.

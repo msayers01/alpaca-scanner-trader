@@ -1243,23 +1243,21 @@ kbd {
   border-left-color: var(--up);
 }
 
-/* tooltip (CSS-only, via data-tip) */
+/* tooltip: anchor icon + bubble portalled to <body> (see Tip in components/ui/States.tsx) */
 .tip {
-  position: relative;
   display: inline-flex;
   align-items: center;
   cursor: help;
   color: var(--text-3);
 }
-.tip:hover::after,
-.tip:focus-visible::after {
-  content: attr(data-tip);
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 6px);
-  transform: translateX(-50%);
+.tip:hover,
+.tip:focus-visible {
+  color: var(--text-2);
+}
+.tip-pop {
+  position: fixed;
   width: max-content;
-  max-width: 300px;
+  max-width: min(300px, calc(100vw - 16px));
   white-space: normal;
   text-transform: none;
   letter-spacing: normal;
@@ -1271,7 +1269,7 @@ kbd {
   border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
   padding: var(--sp-2) var(--sp-3);
-  z-index: var(--z-pop);
+  z-index: var(--z-tip);
   pointer-events: none;
   box-shadow: var(--shadow-pop);
 }

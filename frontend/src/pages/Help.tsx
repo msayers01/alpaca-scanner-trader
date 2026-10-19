@@ -247,8 +247,8 @@ export default function Help() {
               </li>
             </ul>
             <p>
-              The stats strip shows buying power, cash, options buying power, day trades used in the rolling 5-day window (accounts under $25k are limited to 3 before being flagged as
-              a pattern day trader), and the account tier. Positions rows open the symbol page; <strong>Close</strong> sends a market order for 100/50/25 % after confirmation. Open
+              The stats strip shows buying power, cash, options buying power, day trades in the last 5 business days (for reference — FINRA eliminated the pattern-day-trader rule and its
+              $25k minimum effective June 4, 2026, so there is no day-trade limit), and the account tier. Positions rows open the symbol page; <strong>Close</strong> sends a market order for 100/50/25 % after confirmation. Open
               orders can be cancelled. Watchlist prices tick live; add or remove symbols inline or in Settings.
             </p>
           </Sec>
@@ -416,7 +416,7 @@ P(up)    = N(E[r_h] / σ_h)
                   ["Post-Earnings Drift (earnings_drift)", "option/equity · swing", "1–3 days after earnings: gap ≥ 1.5σ with relative volume ≥ 2; the LLM reads the headline", "20-day time stop; stop at gap fill"],
                   ["Vol-Targeted Trend (tsmom_equity)", "equity · swing", "tsmom and trend_kalman agree; sized to 15 % annual volatility per position (fractional shares)", "Signal flip or 3·ATR trailing stop"],
                   ["ETF Pullback Reversion (meanrev_etf)", "equity · swing", "SPY/QQQ/IWM/sector ETFs above SMA200 with RSI(2) < 10 or IBS < 0.2", "Close above the 5-day SMA or 5-day time stop"],
-                  ["Opening-Range Breakout (orb_intraday)", "equity/option · intraday", "5-minute ORB on the top relative-volume names, direction of the first candle", "Stop at the opposite side of the range; flat by the close. Requires day-trading capacity."],
+                  ["Opening-Range Breakout (orb_intraday)", "equity/option · intraday", "5-minute ORB on the top relative-volume names, direction of the first candle", "Stop at the opposite side of the range; flat by the close. Skipped only if day trades are disabled in the risk settings."],
                   ["LLM Analyst (llm_analyst)", "option · swing", "Top ensemble names; the LLM gets the full dossier and must approve", "Standard exit policy"],
                 ].map(([n, a, e, x]) => (
                   <tr key={n}>
@@ -448,7 +448,7 @@ P(up)    = N(E[r_h] / σ_h)
                   <td>micro</td>
                   <td>&lt; $2,000</td>
                   <td>tsmom_equity (fractional), meanrev_etf, options_edge (only premium ≤ 10 % of equity)</td>
-                  <td>max 3 positions, 5 % risk per trade, κ = 0.20, no day trades, options ≤ 40 % of equity</td>
+                  <td>max 3 positions, 5 % risk per trade, κ = 0.20, options ≤ 40 % of equity</td>
                 </tr>
                 <tr>
                   <td>small</td>
@@ -459,14 +459,14 @@ P(up)    = N(E[r_h] / σ_h)
                 <tr>
                   <td>growth</td>
                   <td>$10k – $25k</td>
-                  <td>all swing strategies</td>
-                  <td>max 8 positions, 2 % risk per trade, κ = 0.25, day trades only within the broker allowance</td>
+                  <td>all, including llm_analyst and orb_intraday</td>
+                  <td>max 8 positions, 2 % risk per trade, κ = 0.25</td>
                 </tr>
                 <tr>
                   <td>pro</td>
                   <td>≥ $25k</td>
-                  <td>all, including orb_intraday</td>
-                  <td>max 12 positions, 1.5 % risk per trade, κ = 0.30</td>
+                  <td>all strategies</td>
+                  <td>max 12 positions, 1.5 % risk per trade, κ = 0.30, up to 2 positions per underlying</td>
                 </tr>
               </tbody>
             </table>
@@ -525,7 +525,7 @@ P(up)    = N(E[r_h] / σ_h)
                   ["min_option_volume", "Minimum contract volume today."],
                   ["min_open_interest", "Minimum contract open interest."],
                   ["max_spread_pct", "Maximum (ask − bid) / mid; wider contracts are skipped."],
-                  ["allow_daytrades", "auto = respect the broker's day-trade allowance (PDT); never = never open and close the same day; always = ignore (only safe ≥ $25k)."],
+                  ["allow_daytrades", "auto = unlimited day trades (PDT rule eliminated June 4, 2026), but if the broker still rejects an order under legacy PDT protection during its transition period the auto-trader pauses intraday strategies and limits same-day exits for the session; never = never open and close the same day (stop-losses still fire); always = never back off."],
                   ["entry_start_min / entry_end_min", "Entry window in minutes relative to the regular session (no new entries outside it; avoids the open/close auction noise)."],
                   ["earnings_blackout_days", "No new entries this many days before an earnings date (unless the strategy is event-driven)."],
                   ["cycle_seconds", "Seconds between auto-trader cycles."],
@@ -544,8 +544,9 @@ P(up)    = N(E[r_h] / σ_h)
               </tbody>
             </table>
             <p>
-              The risk manager also enforces mode/arming, market session, buying power, the PDT guard (using the broker's own day-trade count and flags, so it stays correct if the rules
-              change), and a duplicate-order guard.
+              The risk manager also enforces mode/arming, market session, buying power, the day-trade policy (unlimited by default since FINRA removed the PDT rule; it backs off automatically if
+              the broker rejects an order for legacy PDT reasons), and a duplicate-order guard. Tiers exist for position
+              sizing — the $25k boundary no longer has any regulatory meaning.
             </p>
           </Sec>
 
@@ -687,7 +688,7 @@ P(up)    = N(E[r_h] / σ_h)
                   ["Charts empty or sparse", "On IEX, thinly traded symbols have few prints. Outside market hours 1D shows the last session. Try a longer range."],
                   ["Flow tab empty", "With the free indicative options feed, flow is snapshot-based and only appears during market hours."],
                   ["LLM “unreachable”", "Run ollama serve, pull the model (e.g. ollama pull qwen2.5), check the base URL in Settings, then press Test."],
-                  ["Order rejected", "Check the toast and decision text: buying power, options approval level, PDT limit, market closed for options, or a risk-manager limit."],
+                  ["Order rejected", "Check the toast and decision text: buying power, options approval level, broker legacy PDT protection, market closed for options, or a risk-manager limit."],
                   ["Auto-trader armed but not trading", "Look at the decision log: ideas may be skipped or rejected (entry window, liquidity, blackout, caps). Run one cycle to see fresh decisions."],
                   ["Page 404 after refresh in production", "The backend must serve index.html for unknown non-/api paths (SPA fallback) when serving frontend/dist."],
                 ].map(([k, v]) => (

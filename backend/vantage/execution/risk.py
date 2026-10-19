@@ -39,8 +39,10 @@ RISK_SCHEMA: list[ParamSpec] = [
     ParamSpec("min_open_interest", "int", 100, "Min open interest", "", "Liquidity", min=0, max=100000, step=10),
     ParamSpec("max_spread_pct", "float", 0.10, "Max spread %", "Bid-ask spread / mid", "Liquidity", min=0.005, max=1.0, step=0.005),
     ParamSpec("min_edge_score", "float", 1.0, "Min edge score", "Ideas below this are skipped", "Filters", min=-100, max=100, step=0.5),
-    ParamSpec("allow_daytrades", "enum", "auto", "Day trades", "auto = only when the broker reports capacity "
-              "(equity >= $25k or PDT buying power)", "Filters", options=["auto", "never", "always"]),
+    ParamSpec("allow_daytrades", "enum", "auto", "Day trades", "auto = unlimited (FINRA eliminated the PDT rule "
+              "effective 2026-06-04) but backs off if the broker still rejects orders under legacy PDT protection "
+              "during its transition; never = no same-day round trips; always = never back off", "Filters",
+              options=["auto", "never", "always"]),
     ParamSpec("entry_start_min", "int", 10, "No entries first N min", "Minutes after the open before new entries",
               "Timing", min=0, max=390, step=1),
     ParamSpec("entry_end_min", "int", 15, "No entries last N min", "Minutes before the close after which no entries",
@@ -82,22 +84,38 @@ class DayState:
     peak_equity: float = 0.0
 
 
-def daytrade_capable(account: dict[str, Any], policy: str) -> bool:
+# FINRA eliminated the pattern-day-trader rule (no $25k minimum, no day-trade count limit) effective
+# 2026-06-04 (Regulatory Notice 26-10); intraday margin is now monitored on actual exposure, which the broker
+# enforces through buying power. Firms may keep legacy PDT protection during a transition until 2027-10-20,
+# so "auto" allows unlimited day trades until the broker actually rejects one for PDT reasons
+# (`broker_pdt` = True), then falls back to the legacy allowance.
+# Alpaca: "trade denied due to pattern day trading protection" (code 40310100). Deliberately narrow so the
+# new intraday-margin errors (e.g. "insufficient day trading buying power") are NOT mistaken for PDT.
+PDT_REJECTION_MARKERS = ("pattern day", "day trading protection", "40310100")
+
+
+def is_pdt_rejection(message: str) -> bool:
+    m = message.lower()
+    return any(k in m for k in PDT_REJECTION_MARKERS)
+
+
+def daytrade_capable(account: dict[str, Any], policy: str, broker_pdt: bool = False) -> bool:
     if policy == "never":
         return False
-    if policy == "always":
+    if policy == "always" or not broker_pdt:
         return True
-    eq = account.get("equity", 0.0)
-    if eq >= 25_000:
+    # broker still enforcing legacy PDT protection
+    if account.get("equity", 0.0) >= 25_000:
         return True
-    if account.get("pattern_day_trader") and account.get("daytrading_buying_power", 0) > 0:
-        return True
-    return False
+    return bool(account.get("pattern_day_trader") and account.get("daytrading_buying_power", 0) > 0)
 
 
-def can_close_same_day(account: dict[str, Any], policy: str) -> bool:
-    """Closing a position opened today creates a day trade; allow if capable or allowance remains."""
-    return daytrade_capable(account, policy) or account.get("daytrade_count", 0) < 3
+def can_close_same_day(account: dict[str, Any], policy: str, broker_pdt: bool = False) -> bool:
+    """Closing a position opened today is a day trade. Unlimited unless the user disabled day trades or the
+    broker is enforcing legacy PDT protection (then only within its 3-per-5-days allowance)."""
+    if daytrade_capable(account, policy, broker_pdt):
+        return True
+    return broker_pdt and policy != "never" and account.get("daytrade_count", 0) < 3
 
 
 class RiskManager:
@@ -107,6 +125,7 @@ class RiskManager:
         self.day = DayState()
         self.killed = False
         self.kill_reason: str | None = None
+        self.broker_pdt = False  # set when the broker rejects an order under legacy PDT protection
 
     def update(self, values: dict[str, Any]) -> None:
         self.cfg = apply_params(RISK_SCHEMA, {**self.cfg, **values})
@@ -183,8 +202,10 @@ class RiskManager:
         event_ok = bool(idea.signals.get("event_ok"))
         if days_to_earnings is not None and 0 <= days_to_earnings <= c["earnings_blackout_days"] and not event_ok:
             return None, f"earnings in {days_to_earnings}d (blackout {c['earnings_blackout_days']}d)"
-        if intraday and not daytrade_capable(account, c["allow_daytrades"]):
-            return None, "intraday strategy needs day-trading capacity (equity < $25k / no PDT buying power)"
+        if intraday and not daytrade_capable(account, c["allow_daytrades"], self.broker_pdt):
+            if c["allow_daytrades"] == "never":
+                return None, "intraday strategy skipped: day trades disabled (risk setting 'Day trades' = never)"
+            return None, "intraday strategy skipped: broker is still enforcing legacy PDT protection on this account"
         # --- liquidity
         if idea.asset_class == "option":
             ct = idea.contract

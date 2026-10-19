@@ -76,6 +76,9 @@ Production-style single server: `npm run build` then `uv run vantage` serves `fr
   exceeded`); bars/updatedBars are effectively unlimited; free plans allow ONE data-stream connection.
   `MarketDataService` streams bars for everything, gives the 30 quote slots to UI-viewed symbols first, skips
   trades on IEX and REST-polls snapshots every 10 s for the rest (polled quotes have zero sizes so OFI ignores them).
+- **No PDT rule.** FINRA eliminated the pattern-day-trader rule ($25k minimum, 3-in-5-days limit) effective
+  2026-06-04 (Notice 26-10). Don't reintroduce PDT limits; day trades are unlimited unless the broker
+  rejects one (legacy protection allowed until 2027-10-20) — see `is_pdt_rejection` in `execution/risk.py`.
 - Portfolio history: `period=1M` is > 30 days and rejects intraday timeframes (use `30D`); `start` without
   `end` defaults to a 1-month window (always send both for YTD).
 - Options orders: `day` TIF, whole contracts, no extended hours, no broker-side brackets

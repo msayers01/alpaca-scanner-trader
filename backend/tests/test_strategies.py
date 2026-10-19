@@ -63,4 +63,4 @@ def test_tiers_cover_equity_range_and_reference_real_strategies():
     assert tier_for_equity(100_000) == "pro"
     for t in TIERS:
         assert set(t["strategies"]) <= set(REGISTRY), t["tier"]
-        assert "orb_intraday" not in t["strategies"] or t["tier"] == "pro"
+        assert t["risk"]["allow_daytrades"] == "auto", t["tier"]  # PDT rule eliminated 2026-06-04

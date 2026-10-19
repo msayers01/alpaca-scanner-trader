@@ -567,7 +567,7 @@ class SimBroker:
             "options_buying_power": max(self.cash, 0.0),
             "daytrade_count": len(self.daytrades),
             "pattern_day_trader": False,
-            "daytrading_buying_power": max(self.cash, 0.0) if eq >= 25_000 else 0.0,
+            "daytrading_buying_power": max(self.cash, 0.0),  # no PDT minimum since 2026-06-04
             "day_pl": eq - self.last_equity,
             "day_pl_pct": (eq - self.last_equity) / self.last_equity if self.last_equity else 0.0,
             "status": "ACTIVE",
