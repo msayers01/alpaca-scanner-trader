@@ -11,6 +11,7 @@ const Feeds = lazy(() => import("./pages/Feeds"));
 const AutoTrader = lazy(() => import("./pages/AutoTrader"));
 const CalendarPage = lazy(() => import("./pages/Calendar"));
 const Backtest = lazy(() => import("./pages/Backtest"));
+const LlmLog = lazy(() => import("./pages/LlmLog"));
 const Settings = lazy(() => import("./pages/Settings"));
 const Help = lazy(() => import("./pages/Help"));
 const NotFound = lazy(() => import("./pages/NotFound"));
@@ -34,6 +35,7 @@ const router = createBrowserRouter([
       { path: "autotrader", element: <AutoTrader /> },
       { path: "calendar", element: <CalendarPage /> },
       { path: "backtest", element: <Backtest /> },
+      { path: "llm", element: <LlmLog /> },
       { path: "settings", element: <Settings /> },
       { path: "help", element: <Help /> },
       { path: "*", element: <NotFound /> },

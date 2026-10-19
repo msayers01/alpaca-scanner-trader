@@ -47,6 +47,7 @@ class Container:
             llm_cfg.get("base_url", settings.llm_base_url), llm_cfg.get("model", settings.llm_model), store, mode,
             enabled=llm_cfg.get("enabled", settings.llm_enabled), timeout_s=settings.llm_timeout_s,
             max_concurrency=settings.llm_max_concurrency, temperature=llm_cfg.get("temperature", 0.1),
+            bus=bus,
         )
         if mode == "sim":
             self.broker: Any = SimBroker(bus, self.all_symbols(), store, float(store.kv_get("sim", "initial_equity", 10_000.0)))

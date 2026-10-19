@@ -76,6 +76,8 @@ Production-style single server: `npm run build` then `uv run vantage` serves `fr
   exceeded`); bars/updatedBars are effectively unlimited; free plans allow ONE data-stream connection.
   `MarketDataService` streams bars for everything, gives the 30 quote slots to UI-viewed symbols first, skips
   trades on IEX and REST-polls snapshots every 10 s for the rest (polled quotes have zero sizes so OFI ignores them).
+- `/ws` must send **text** frames (`send_text`). Binary frames were once silently dropped by the browser,
+  killing every live update while REST kept the UI looking alive. Test clients must use `receive_json(mode="text")`.
 - **No PDT rule.** FINRA eliminated the pattern-day-trader rule ($25k minimum, 3-in-5-days limit) effective
   2026-06-04 (Notice 26-10). Don't reintroduce PDT limits; day trades are unlimited unless the broker
   rejects one (legacy protection allowed until 2027-10-20) — see `is_pdt_rejection` in `execution/risk.py`.

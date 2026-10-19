@@ -491,6 +491,41 @@ export interface LlmInfo {
   stats: Record<string, unknown> | null;
 }
 
+/** One logged exchange with the local LLM (list view; also the payload of the `llm` WS channel). */
+export interface LlmCallSummary {
+  id: string;
+  t: number;
+  purpose: string; // "gate" | "news" | "analyst" | "test" | …
+  model: string;
+  latency_ms: number;
+  ok: boolean;
+  cached: boolean;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  error: string | null;
+  preview: string;
+}
+
+export interface LlmCallDetail extends Omit<LlmCallSummary, "preview"> {
+  system: string | null;
+  user: string;
+  response: string;
+  parsed: Record<string, unknown> | null;
+}
+
+export interface LlmCallsResponse {
+  calls: LlmCallSummary[];
+  by_purpose: { purpose: string; n: number; fails: number; avg_ms: number | null }[];
+}
+
+export interface LlmCallsQuery {
+  limit?: number;
+  purpose?: string;
+  status?: "ok" | "fail" | "cached";
+  q?: string;
+  before?: number;
+}
+
 export interface LlmUpdate {
   enabled?: boolean;
   model?: string;

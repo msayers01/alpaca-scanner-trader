@@ -16,7 +16,7 @@ const TOC: { id: string; title: string; sub?: { id: string; title: string }[] }[
   { id: "tiers", title: "Account tiers" },
   { id: "autotrader", title: "Auto-trader" },
   { id: "risk", title: "Risk parameters" },
-  { id: "llm", title: "LLM gate" },
+  { id: "llm", title: "LLM gate", sub: [{ id: "llm-log", title: "LLM Log" }] },
   { id: "feeds", title: "Feeds & data entitlements" },
   { id: "calendar", title: "Calendar" },
   { id: "backtest", title: "Backtesting, PSR & DSR" },
@@ -562,6 +562,14 @@ P(up)    = N(E[r_h] / σ_h)
             <p>
               Configure it in Settings (model, base URL, test button with latency). If it is unreachable, gated ideas follow <code>on_llm_failure</code> and news falls back to the
               lexicon sentiment scorer. LLM rationales appear in decisions and news items.
+            </p>
+            <h3 id="llm-log">LLM Log</h3>
+            <p>
+              The <strong>LLM Log</strong> page (sidebar, or <kbd>g</kbd> <kbd>l</kbd>) records every exchange with the model, newest first, updating live. Each row shows the
+              purpose (<em>Trade gate</em>, <em>News</em>, <em>Analyst</em>, <em>Test</em>), success / failure / cached, latency, prompt→completion tokens and a one-line summary of
+              the reply. Click a row to read the full exchange: the <strong>parsed result</strong> Vantage acted on, the <strong>raw reply</strong>, the <strong>input sent</strong>
+              (dossiers are pretty-printed JSON) and the <strong>system prompt</strong>, each with a copy button. Filter by purpose or status, and search the full text of prompts and
+              replies (e.g. a ticker). Calls are stored locally in <code>data/vantage.db</code> per trading mode; nothing leaves your machine.
             </p>
           </Sec>
 

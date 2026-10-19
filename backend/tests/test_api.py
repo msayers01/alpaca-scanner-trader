@@ -134,13 +134,33 @@ def test_llm_endpoints(client):
     assert "model" in info
 
 
+def test_llm_call_log_endpoints(client):
+    from vantage.llm.gateway import LLMResult
+
+    llm = client.app.state.vs.container.llm
+    llm._log("gate", "SYS", '{"symbol": "AAPL"}', LLMResult(True, {"decision": "reject", "rationale": "earnings"},
+                                                             '{"decision":"reject"}', 1500), {"prompt_tokens": 9})
+    llm._log("news", "SYS2", "headline", LLMResult(False, None, "", 45000, "TimeoutError: "), {})
+    llm.store.flush()
+    res = client.get("/api/llm/calls").json()
+    assert {c["purpose"] for c in res["calls"]} >= {"gate", "news"} and res["by_purpose"]
+    gate = next(c for c in res["calls"] if c["purpose"] == "gate")
+    assert gate["preview"].startswith("reject: earnings") and gate["ok"] and "system" not in gate
+    assert all(not c["ok"] for c in client.get("/api/llm/calls?status=fail").json()["calls"])
+    assert [c["purpose"] for c in client.get("/api/llm/calls?purpose=news").json()["calls"]] == ["news"]
+    assert client.get("/api/llm/calls?q=AAPL").json()["calls"][0]["id"] == gate["id"]
+    d = client.get(f"/api/llm/calls/{gate['id']}").json()
+    assert d["system"] == "SYS" and d["user"] == '{"symbol": "AAPL"}' and d["parsed"]["decision"] == "reject"
+    assert client.get("/api/llm/calls/nope").status_code == 404
+
+
 def test_websocket_stream(client):
     with client.websocket_connect("/ws") as ws:
         ws.send_text('{"op":"sub","ch":["quote:AAPL","account","equity"]}')
         got = set()
         deadline = time.time() + 5
         while time.time() < deadline and not {"quote:AAPL", "account"} <= got:
-            msg = ws.receive_json(mode="binary")
+            msg = ws.receive_json(mode="text")  # the browser client only reads text frames
             for item in msg.get("b", []):
                 got.add(item["ch"])
         assert {"quote:AAPL", "account"} <= got

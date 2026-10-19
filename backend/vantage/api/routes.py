@@ -13,7 +13,7 @@ from vantage.broker.base import BrokerError
 from vantage.container import Container
 from vantage.core import clock
 from vantage.core.types import parse_occ
-from vantage.core.util import dumps, now_ms
+from vantage.core.util import dumps, loads, now_ms
 from vantage.data.market import RANGE_SPEC
 from vantage.scanner.options_scanner import SCAN_SCHEMA
 from vantage.strategies.presets import TIER_BY_ID
@@ -531,6 +531,70 @@ async def llm_update(request: Request, body: dict[str, Any] = Body(...)) -> JSON
                                      "temperature": c.llm.temperature})
     await c.llm.probe(force=True)
     return J(c.llm.info())
+
+
+@router.get("/llm/calls")
+async def llm_calls(request: Request, limit: int = 200, purpose: str | None = None, status: str | None = None,
+                    q: str | None = None, before: int | None = None) -> JSON:
+    """Summaries of logged LLM exchanges (newest first) for the LLM Log page."""
+    from vantage.llm.gateway import call_preview
+
+    c = C(request)
+    where, args = ["mode=?"], [c.mode]
+    if purpose:
+        where.append("purpose=?")
+        args.append(purpose)
+    if status == "ok":
+        where.append("ok=1")
+    elif status == "fail":
+        where.append("ok=0")
+    elif status == "cached":
+        where.append("cached=1")
+    if before:
+        where.append("t<?")
+        args.append(int(before))
+    if q and q.strip():
+        like = f"%{q.strip()[:100]}%"
+        where.append("(request LIKE ? OR response LIKE ? OR error LIKE ? OR parsed LIKE ?)")
+        args += [like, like, like, like]
+    rows = await c.store.query(
+        "SELECT id,t,purpose,model,latency_ms,ok,cached,prompt_tokens,completion_tokens,error,parsed,"
+        f"substr(response,1,600) AS head FROM llm_calls WHERE {' AND '.join(where)} ORDER BY t DESC LIMIT ?",
+        (*args, max(1, min(limit, 1000))),
+    )
+    out = []
+    for r in rows:
+        parsed = loads(r["parsed"]) if r["parsed"] else None
+        out.append({
+            "id": r["id"], "t": r["t"], "purpose": r["purpose"], "model": r["model"], "latency_ms": r["latency_ms"],
+            "ok": bool(r["ok"]), "cached": bool(r["cached"]), "prompt_tokens": r["prompt_tokens"],
+            "completion_tokens": r["completion_tokens"], "error": r["error"],
+            "preview": call_preview(parsed, r["head"] or "", r["error"]),
+        })
+    counts = await c.store.query(
+        "SELECT purpose, COUNT(*) n, SUM(ok=0) fails, AVG(CASE WHEN ok=1 AND cached=0 THEN latency_ms END) avg_ms "
+        "FROM llm_calls WHERE mode=? GROUP BY purpose", (c.mode,))
+    return J({"calls": out, "by_purpose": counts})
+
+
+@router.get("/llm/calls/{call_id}")
+async def llm_call_detail(request: Request, call_id: str) -> JSON:
+    from vantage.llm.gateway import _extract_json
+
+    c = C(request)
+    rows = await c.store.query(
+        "SELECT id,t,purpose,model,latency_ms,ok,cached,prompt_tokens,completion_tokens,error,parsed,system,"
+        "request,response FROM llm_calls WHERE id=? AND mode=?", (call_id, c.mode))
+    if not rows:
+        return err("not_found", "no such LLM call", 404)
+    r = rows[0]
+    return J({
+        "id": r["id"], "t": r["t"], "purpose": r["purpose"], "model": r["model"], "latency_ms": r["latency_ms"],
+        "ok": bool(r["ok"]), "cached": bool(r["cached"]), "prompt_tokens": r["prompt_tokens"],
+        "completion_tokens": r["completion_tokens"], "error": r["error"],
+        "system": r["system"], "user": r["request"], "response": r["response"],
+        "parsed": loads(r["parsed"]) if r["parsed"] else (_extract_json(r["response"] or "") if r["ok"] else None),
+    })
 
 
 @router.post("/llm/test")

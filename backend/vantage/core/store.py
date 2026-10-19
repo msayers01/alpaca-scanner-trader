@@ -54,7 +54,13 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE TABLE IF NOT EXISTS llm_calls (
   id TEXT PRIMARY KEY, mode TEXT, t INTEGER, purpose TEXT, model TEXT, latency_ms INTEGER,
   ok INTEGER, request TEXT, response TEXT);
+CREATE INDEX IF NOT EXISTS ix_llm_calls_t ON llm_calls(mode, t);
 """
+
+MIGRATIONS: dict[str, list[tuple[str, str]]] = {
+    "llm_calls": [("system", "TEXT"), ("error", "TEXT"), ("parsed", "TEXT"), ("cached", "INTEGER DEFAULT 0"),
+                  ("prompt_tokens", "INTEGER"), ("completion_tokens", "INTEGER")],
+}
 
 _STOP = object()
 
@@ -67,6 +73,7 @@ class Store:
         self._q: queue.Queue[Any] = queue.Queue()
         self._writer = self._connect()
         self._writer.executescript(SCHEMA)
+        self._migrate()
         self._writer.commit()
         self._reader = self._connect() if self.path != ":memory:" else self._writer
         self._read_lock = threading.Lock()
@@ -80,6 +87,14 @@ class Store:
         conn.execute("PRAGMA busy_timeout=5000")
         conn.row_factory = sqlite3.Row
         return conn
+
+    def _migrate(self) -> None:
+        """Additive column migrations (SQLite has no ADD COLUMN IF NOT EXISTS)."""
+        for table, cols in MIGRATIONS.items():
+            have = {r[1] for r in self._writer.execute(f"PRAGMA table_info({table})").fetchall()}
+            for name, decl in cols:
+                if name not in have:
+                    self._writer.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
 
     # ---------------------------------------------------------------- writer thread
     def _run(self) -> None:

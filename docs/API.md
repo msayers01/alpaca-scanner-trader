@@ -230,6 +230,18 @@ interface Decision { id: string; t: number; strategy_id: string; symbol: string;
 | GET | `/api/llm` | — | `{enabled, available, base_url, model, models: string[], stats}` |
 | PUT | `/api/llm` | `{enabled?, model?, base_url?, temperature?}` | same |
 | POST | `/api/llm/test` | `{prompt?}` | `{ok, latency_ms, text}` |
+| GET | `/api/llm/calls` | `limit` (≤1000), `purpose?` (`gate`\|`news`\|`analyst`\|`test`), `status?` (`ok`\|`fail`\|`cached`), `q?` (full-text over prompts/replies), `before?` (ms cursor) | `{calls: LlmCallSummary[], by_purpose: {purpose, n, fails, avg_ms}[]}` |
+| GET | `/api/llm/calls/{id}` | — | `LlmCallDetail` |
+
+```ts
+interface LlmCallSummary { id: string; t: number; purpose: string; model: string; latency_ms: number;
+  ok: boolean; cached: boolean; prompt_tokens: number | null; completion_tokens: number | null;
+  error: string | null; preview: string; }            // also the payload of the `llm` WS channel
+interface LlmCallDetail extends Omit<LlmCallSummary, "preview"> {
+  system: string | null; user: string; response: string; parsed: Record<string, unknown> | null; }
+```
+Calls are persisted in `llm_calls` (per mode, up to 60,000 chars per prompt/reply); cache hits are logged with
+`cached: true` and `latency_ms: 0`.
 
 ### Backtest
 | Method | Path | Body | Response |
@@ -299,6 +311,7 @@ and `{"pong": 1, "ts": …}` for pings.
 | `flow` | `FlowEvent` | no |
 | `signals` | `SignalRow` | no (rate-limited server-side) |
 | `decisions` | `Decision` | no |
+| `llm` | `LlmCallSummary` (each LLM exchange as it completes) | no |
 | `status` | `Status` | yes |
 | `scanner` | `ScanResult` (on each completed scan) | yes |
 

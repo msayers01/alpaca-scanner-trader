@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 
 CONFLATED_PREFIXES = ("quote:", "bar:", "oquote:")
 CONFLATED = {"account", "positions", "equity", "status", "scanner"}
-FEEDS = {"orders", "news", "flow", "signals", "decisions"}
+FEEDS = {"orders", "news", "flow", "signals", "decisions", "llm"}
 
 
 class Client:
@@ -61,6 +61,7 @@ class Hub:
             on("flow", lambda t, d: self._push("flow", d)),
             on("signal", lambda t, d: self._push("signals", d)),
             on("decision", lambda t, d: self._push("decisions", d)),
+            on("llm", lambda t, d: self._push("llm", d)),
         ]
         self._task = asyncio.create_task(self._flusher(), name="ws-flush")
         self._status_task = asyncio.create_task(self._status_loop(), name="ws-status")
@@ -116,7 +117,7 @@ class Hub:
                 if not batch:
                     continue
                 try:
-                    await cl.ws.send_bytes(dumps(sanitize({"b": batch, "ts": now_ms()})))
+                    await cl.ws.send_text(dumps(sanitize({"b": batch, "ts": now_ms()})).decode())  # text frames (API.md)
                     self.sent_frames += 1
                 except Exception:  # noqa: BLE001
                     self.clients.discard(cl)
@@ -190,7 +191,7 @@ class Hub:
                     cl.channels -= set(gone)
                     await self._release(gone)
                 elif op == "ping":
-                    await ws.send_bytes(dumps({"pong": msg.get("id"), "ts": now_ms()}))
+                    await ws.send_text(dumps({"pong": msg.get("id"), "ts": now_ms()}).decode())
         except WebSocketDisconnect:
             pass
         except Exception:  # noqa: BLE001

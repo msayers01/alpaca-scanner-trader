@@ -20,6 +20,7 @@ const NAV: { to: string; label: string; icon: IconName; key?: string; end?: bool
   { to: "/autotrader", label: "Auto-trader", icon: "bot", key: "a" },
   { to: "/calendar", label: "Calendar", icon: "calendar", key: "c" },
   { to: "/backtest", label: "Backtest", icon: "backtest", key: "b" },
+  { to: "/llm", label: "LLM Log", icon: "chat", key: "l" },
 ];
 const NAV2: { to: string; label: string; icon: IconName; key?: string }[] = [
   { to: "/settings", label: "Settings", icon: "settings", key: "t" },

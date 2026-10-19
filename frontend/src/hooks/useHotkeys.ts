@@ -16,6 +16,7 @@ export const GO_SHORTCUTS: { key: string; path: string; label: string }[] = [
   { key: "a", path: "/autotrader", label: "Auto-trader" },
   { key: "c", path: "/calendar", label: "Calendar" },
   { key: "b", path: "/backtest", label: "Backtest" },
+  { key: "l", path: "/llm", label: "LLM Log" },
   { key: "t", path: "/settings", label: "Settings" },
   { key: "h", path: "/help", label: "Help" },
 ];

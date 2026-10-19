@@ -31,7 +31,9 @@ export type IconName =
   | "line"
   | "shield"
   | "bolt"
-  | "pause";
+  | "pause"
+  | "chat"
+  | "copy";
 
 const paths: Record<IconName, string> = {
   dashboard: "M3 13h8V3H3zM13 21h8V11h-8zM3 21h8v-6H3zM13 3v6h8V3z",
@@ -65,6 +67,8 @@ const paths: Record<IconName, string> = {
   shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z",
   bolt: "M13 2L3 14h9l-1 8 10-12h-9z",
   pause: "M8 5v14M16 5v14",
+  chat: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2zM8 9h8M8 13h5",
+  copy: "M9 9h11v11H9zM5 15H4V4h11v1",
 };
 
 interface Props extends Omit<SVGProps<SVGSVGElement>, "name"> {

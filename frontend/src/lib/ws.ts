@@ -25,6 +25,7 @@ export interface ConnInfo {
 type Listener = (data: unknown, ch: string) => void;
 
 const PING_MS = 15_000;
+const DECODER = new TextDecoder();
 const BACKOFF_MIN = 500;
 const BACKOFF_MAX = 15_000;
 
@@ -131,6 +132,7 @@ class WsClient {
       return;
     }
     this.sock = sock;
+    sock.binaryType = "arraybuffer";
     sock.onopen = () => {
       if (this.sock !== sock) return;
       this.setInfo({ state: "open", reconnectAttempt: 0 });
@@ -202,10 +204,15 @@ class WsClient {
   }
 
   private onMessage(ev: MessageEvent): void {
-    if (typeof ev.data !== "string") return;
+    // The server sends JSON text frames; binary frames (ArrayBuffer, see binaryType) are decoded too so a
+    // transport change can never silently drop every live update again.
+    let raw: string;
+    if (typeof ev.data === "string") raw = ev.data;
+    else if (ev.data instanceof ArrayBuffer) raw = DECODER.decode(ev.data);
+    else return;
     let msg: unknown;
     try {
-      msg = JSON.parse(ev.data);
+      msg = JSON.parse(raw);
     } catch {
       return;
     }

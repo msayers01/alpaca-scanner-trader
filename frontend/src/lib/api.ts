@@ -10,6 +10,9 @@ import type {
   CalEventCreate,
   Chain,
   Decision,
+  LlmCallDetail,
+  LlmCallsQuery,
+  LlmCallsResponse,
   FlowEvent,
   Forecast,
   HistoryRange,
@@ -207,6 +210,9 @@ export const api = {
   updateLlm: (body: LlmUpdate) => request<LlmInfo>("PUT", "/llm", { body }),
   testLlm: (prompt?: string) =>
     request<LlmTestResult>("POST", "/llm/test", { body: prompt ? { prompt } : {}, timeoutMs: 120_000 }),
+  llmCalls: (query: LlmCallsQuery = {}, o?: Opt) =>
+    request<LlmCallsResponse>("GET", "/llm/calls", { query: query as Query, ...o }),
+  llmCall: (id: string, o?: Opt) => request<LlmCallDetail>("GET", `/llm/calls/${enc(id)}`, o),
 
   // SIM only (addition): reset the simulated account to a starting equity ($100–$10M)
   simReset: (equity: number) => request<Account>("POST", "/sim/reset", { body: { equity } }),

@@ -2169,3 +2169,80 @@ kbd {
     display: none;
   }
 }
+
+/* LLM Log page */
+.llm-split {
+  display: grid;
+  grid-template-columns: minmax(340px, 5fr) 7fr;
+  gap: var(--sp-3);
+  height: calc(100vh - 330px);
+  min-height: 420px;
+}
+.llm-list {
+  overflow: hidden;
+  min-width: 0;
+}
+.llm-detail-card {
+  overflow: auto;
+  min-width: 0;
+  padding: var(--sp-3) var(--sp-4);
+}
+.vrow.selected {
+  background: var(--surface-2);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.llm-detail-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.llm-meta {
+  margin-bottom: var(--sp-3);
+}
+.llm-section {
+  border-top: 1px solid var(--border);
+  padding: var(--sp-2) 0;
+}
+.llm-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 28px;
+}
+.llm-section-head .link-btn {
+  font-weight: var(--fw-semibold);
+  color: var(--text);
+}
+.llm-section-head .caret {
+  display: inline-block;
+  width: 12px;
+  color: var(--text-3);
+}
+.llm-pre {
+  margin: var(--sp-2) 0 0;
+  padding: var(--sp-3);
+  background: var(--surface-0, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 420px;
+  overflow: auto;
+  color: var(--text);
+}
+@media (max-width: 1000px) {
+  .llm-split {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  .llm-list {
+    height: 360px;
+  }
+  .llm-detail-card {
+    max-height: none;
+  }
+}

@@ -25,6 +25,26 @@ from vantage.core.util import dumps, new_id, now_ms
 
 log = logging.getLogger(__name__)
 
+MAX_LOG = 60_000  # characters of prompt/response kept per call
+
+
+def call_preview(data: dict[str, Any] | None, text: str, error: str | None, n: int = 180) -> str:
+    """One-line summary of a reply for list views: decision/action + rationale, else the raw text or error."""
+    if not data and text and not error:
+        data = _extract_json(text)  # rows logged before `parsed` was stored
+    if data:
+        head = data.get("decision") or data.get("action") or ""
+        why = data.get("rationale") or data.get("reply") or ""
+        items = data.get("items")
+        if not why and isinstance(items, list) and items:
+            it = items[0]
+            why = f"{it.get('symbol')}: dir {it.get('direction')}, mag {it.get('magnitude')} ({len(items)} item(s))"
+        out = f"{head}: {why}" if head else str(why or dumps(data).decode())
+    else:
+        out = error or text
+    out = " ".join(str(out).split())
+    return out[:n] + ("…" if len(out) > n else "")
+
 
 @dataclass(slots=True)
 class LLMResult:
@@ -110,11 +130,13 @@ class LLMGateway:
         timeout_s: float = 45.0,
         max_concurrency: int = 2,
         temperature: float = 0.1,
+        bus: Any = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.store = store
         self.mode = mode
+        self.bus = bus
         self.enabled = enabled
         self.timeout_s = timeout_s
         self.temperature = temperature
@@ -199,13 +221,16 @@ class LLMGateway:
             if hit and time.monotonic() - hit[0] < cache_ttl_s:
                 self.stats.cache_hits += 1
                 res = hit[1]
-                return LLMResult(res.ok, res.data, res.text, res.latency_ms, res.error, cached=True)
+                cached = LLMResult(res.ok, res.data, res.text, 0, res.error, cached=True)
+                self._log(purpose, system, user, cached, {})
+                return cached
         self.stats.calls += 1
         self.stats.by_purpose[purpose] = self.stats.by_purpose.get(purpose, 0) + 1
         t0 = time.perf_counter()
+        usage: dict[str, Any] = {}
         try:
             async with self._sem:
-                text = await asyncio.wait_for(self._call(system, user, schema, max_tokens), self.timeout_s)
+                text, usage = await asyncio.wait_for(self._call(system, user, schema, max_tokens), self.timeout_s)
             data = _extract_json(text)
             err = "unparseable JSON" if data is None else _validate(data, schema)
             res = LLMResult(err is None, data if err is None else None, text, int((time.perf_counter() - t0) * 1000), err)
@@ -220,15 +245,38 @@ class LLMGateway:
                 self._cache[key] = (time.monotonic(), res)
                 while len(self._cache) > 256:
                     self._cache.popitem(last=False)
-        if self.store:
-            self.store.write(
-                "INSERT INTO llm_calls(id,mode,t,purpose,model,latency_ms,ok,request,response) VALUES(?,?,?,?,?,?,?,?,?)",
-                (new_id(), self.mode, now_ms(), purpose, self.model, res.latency_ms, int(res.ok), user[:8000],
-                 (res.text or res.error or "")[:8000]),
-            )
+        self._log(purpose, system, user, res, usage)
         return res
 
-    async def _call(self, system: str, user: str, schema: dict[str, Any], max_tokens: int) -> str:
+    def _log(self, purpose: str, system: str, user: str, res: LLMResult, usage: dict[str, Any]) -> None:
+        """Persist the full exchange (for the LLM Log page) and publish a summary on the ``llm`` topic."""
+        row = {
+            "id": new_id("llm-"),
+            "t": now_ms(),
+            "purpose": purpose,
+            "model": self.model,
+            "latency_ms": res.latency_ms,
+            "ok": res.ok,
+            "cached": res.cached,
+            "prompt_tokens": usage.get("prompt_tokens"),
+            "completion_tokens": usage.get("completion_tokens"),
+            "error": res.error,
+        }
+        if self.store:
+            self.store.write(
+                "INSERT INTO llm_calls(id,mode,t,purpose,model,latency_ms,ok,request,response,system,error,parsed,"
+                "cached,prompt_tokens,completion_tokens) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (row["id"], self.mode, row["t"], purpose, self.model, res.latency_ms, int(res.ok), user[:MAX_LOG],
+                 (res.text or "")[:MAX_LOG], system[:MAX_LOG], res.error,
+                 dumps(res.data).decode() if res.data else None, int(res.cached), row["prompt_tokens"],
+                 row["completion_tokens"]),
+            )
+        if self.bus is not None:
+            self.bus.publish("llm", row | {"preview": call_preview(res.data, res.text, res.error)})
+
+    async def _call(
+        self, system: str, user: str, schema: dict[str, Any], max_tokens: int
+    ) -> tuple[str, dict[str, Any]]:
         msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
         if self.flavor == "ollama":
             body = {
@@ -245,7 +293,9 @@ class LLMGateway:
                 body.pop("think")
                 r = await self._client.post(f"{self.base_url}/api/chat", content=dumps(body))
             r.raise_for_status()
-            return r.json()["message"]["content"]
+            j = r.json()
+            return j["message"]["content"], {"prompt_tokens": j.get("prompt_eval_count"),
+                                             "completion_tokens": j.get("eval_count")}
         body = {
             "model": self.model,
             "messages": msgs,
@@ -256,7 +306,10 @@ class LLMGateway:
         r = await self._client.post(f"{self.base_url}/v1/chat/completions", content=dumps(body),
                                     headers={"Content-Type": "application/json"})
         r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"]
+        j = r.json()
+        u = j.get("usage") or {}
+        return j["choices"][0]["message"]["content"], {"prompt_tokens": u.get("prompt_tokens"),
+                                                       "completion_tokens": u.get("completion_tokens")}
 
     async def warmup(self) -> None:
         """Load the model into GPU memory (a cold load can take a minute+) without counting toward stats."""
