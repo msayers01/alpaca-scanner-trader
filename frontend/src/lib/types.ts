@@ -382,6 +382,10 @@ export interface StrategyInfo {
   stats: { trades: number; win_rate: number | null; pnl: number };
   /** full = replayable on daily bars; synthetic = options priced synthetically; none = can't be backtested. */
   backtest?: { support: BacktestSupport; note: string };
+  /** Persisted runtime state (start equity when switched on, halt reason). */
+  runtime?: { start_equity?: number | null; started_t?: number; halted?: string | null; halted_t?: number | null; halted_equity?: number };
+  /** Strategy-specific UI data (Rags to Riches: effective settings, goal, floor). */
+  extra?: { effective?: RagsEffective; goal_equity?: number; floor_equity?: number; start_equity?: number | null; halted?: string | null };
 }
 
 export type BacktestSupport = "full" | "synthetic" | "none";
@@ -423,6 +427,58 @@ export interface TierPreset {
   description: string;
   min_equity: number;
   max_equity: number | null;
+  /** Manual-only preset (never chosen automatically by equity), e.g. Rags to Riches. */
+  manual?: boolean;
+}
+
+/** POST /api/tools/goal-odds — Monte Carlo odds of compounding from start to goal before floor. */
+export interface GoalOddsRequest {
+  start: number;
+  goal: number;
+  floor: number;
+  position_frac: number;
+  stop_frac: number;
+  reward_r: number;
+  edge_pp?: number;
+  edge_sd?: number;
+  win_rate?: number;
+  cost_frac?: number;
+  stop_slippage?: number;
+  trades_per_day?: number;
+  max_days?: number;
+}
+
+export interface GoalOdds {
+  p_goal: number;
+  p_floor: number;
+  p_unresolved: number;
+  median_trades_to_goal: number | null;
+  p10_trades_to_goal: number | null;
+  median_days_to_goal?: number;
+  win_rate: number;
+  baseline_win_rate: number;
+  breakeven_win_rate: number;
+  edge_sd: number;
+  p_negative_edge: number;
+  win_multiplier: number;
+  loss_multiplier: number;
+  expectancy_pct: number;
+  log_growth_per_trade: number;
+  kelly_fraction: number;
+  kelly_ratio: number | null;
+  max_trades: number;
+}
+
+export interface RagsEffective {
+  position_pct: number;
+  option_pct: number;
+  max_trades_per_day: number;
+  min_minutes_between: number;
+  min_score: number;
+  stop_pct: number;
+  reward_r: number;
+  daily_stop_pct: number;
+  max_consecutive_losses: number;
 }
 
 export interface AutoTraderState {

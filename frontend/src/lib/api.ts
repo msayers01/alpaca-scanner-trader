@@ -10,6 +10,8 @@ import type {
   CalEventCreate,
   Chain,
   Decision,
+  GoalOdds,
+  GoalOddsRequest,
   LlmCallDetail,
   LlmCallsQuery,
   LlmCallsResponse,
@@ -198,6 +200,7 @@ export const api = {
   updateRisk: (body: RiskUpdate) => request<AutoTraderState>("PUT", "/autotrader/risk", { body }),
   /** `tier: "auto"` unlocks automatic tier selection (addition). */
   applyPreset: (tier: Tier | "auto" | string) => request<AutoTraderState>("POST", "/autotrader/preset", { body: { tier } }),
+  goalOdds: (body: GoalOddsRequest, o?: Opt) => request<GoalOdds>("POST", "/tools/goal-odds", { body, timeoutMs: 60_000, ...o }),
   arm: (armed: boolean, confirm?: "LIVE") =>
     request<AutoTraderState>("POST", "/autotrader/arm", { body: confirm ? { armed, confirm } : { armed } }),
   kill: (flatten: boolean) => request<AutoTraderState>("POST", "/autotrader/kill", { body: { flatten }, timeoutMs: 60_000 }),

@@ -479,6 +479,9 @@ def _json(d: Any) -> str:
     return dumps(sanitize(d)).decode()
 
 
+from vantage.strategies.rags import RagsToRiches  # noqa: E402  (separate module, imports base only)
+
 REGISTRY: dict[str, type[Strategy]] = {
-    s.id: s for s in (OptionsEdge, FlowFollow, EarningsDrift, TsmomEquity, MeanrevETF, OrbIntraday, LLMAnalyst)
+    s.id: s for s in (OptionsEdge, FlowFollow, EarningsDrift, TsmomEquity, MeanrevETF, OrbIntraday, LLMAnalyst,
+                      RagsToRiches)
 }

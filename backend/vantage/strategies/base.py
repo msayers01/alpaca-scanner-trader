@@ -42,6 +42,8 @@ class StrategyContext:
     market_state: clock.MarketState
     now: int = field(default_factory=now_ms)
     backtest: bool = False
+    owned: dict[str, str] = field(default_factory=dict)  # symbol -> strategy_id for positions Vantage opened
+    today: dict[str, dict[str, Any]] = field(default_factory=dict)  # strategy_id -> {entries, last_entry_t, ...}
 
     @property
     def session_open(self) -> bool:
@@ -78,6 +80,7 @@ class Strategy(ABC):
     def __init__(self, params: dict[str, Any] | None = None):
         self.params = apply_params(self.schema(), {**self.exit_defaults, **(params or {})})
         self.use_llm_gate = self.default_llm_gate
+        self.runtime = {}
 
     @classmethod
     def schema(cls) -> list[ParamSpec]:
@@ -88,6 +91,17 @@ class Strategy(ABC):
 
     @abstractmethod
     async def generate(self, ctx: StrategyContext) -> list[TradeIdea]: ...
+
+    # runtime state persisted by the AutoTrader (e.g. start equity when enabled); set after construction
+    runtime: dict[str, Any]
+
+    def should_halt(self, ctx: StrategyContext) -> dict[str, Any] | None:
+        """Return {"reason", "flatten": bool, "next_preset": bool} to switch this strategy off (goal/floor)."""
+        return None
+
+    def extra_info(self) -> dict[str, Any]:
+        """Strategy-specific data for the UI (effective settings, goal progress...)."""
+        return {}
 
     def exit_params(self) -> dict[str, Any]:
         p = self.params

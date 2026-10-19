@@ -163,6 +163,27 @@ prior weights with strength `λ = 30/(30 + n_obs)`. Forecast:
 
 All strategies expose their thresholds as `ParamSpec`s (editable in the UI).
 
+### 7.1 Rags to Riches (`rags_to_riches`, `strategies/rags.py`) — high-risk small-account accelerator
+Goal-seeking intraday strategy for tiny balances ($20+). One best setup at a time (configurable up to 3):
+opening-range breakout in the direction of the opening drive with relative volume, VWAP trend pullback,
+high/low-of-day momentum on a ≥2× volume surge; QQQ-vs-VWAP tape filter (±0.1 score). Long-only
+instruments: leveraged ETFs, the broker's most-active names (price ≥ `min_price`), inverse ETFs for bearish
+setups, optional cheap 0–2 DTE SPY/QQQ options (|Δ| 0.15–0.45, spread ≤ 25 %, premium ≤ budget).
+Sizing is explicit: `TradeIdea.target_fraction` = fraction of *current* equity (compounding), which replaces
+Kelly × κ in the RiskManager while every hard cap still applies. Stops are structural, clamped to 0.5–2×
+`stop_pct`; target = `reward_r` × stop; trailing after `trail_after_r`; max hold; flat before the close.
+Brakes: max trades/day, spacing, daily loss stop, losing-streak stop, dollar floor. `should_halt()` stops the
+strategy at the dollar goal (optionally flattening and handing over to the equity tier preset) or the floor.
+`aggressiveness` presets: moderate (35 % / 3 trades / 1.5 % stop / 2R), aggressive (70 % / 6 / 2 % / 2.5R,
+default), all_in (100 % / 12 / 2.5 % / 3R), or custom. The manual-only `rags` tier preset loosens global caps.
+
+Odds estimator (`quant/growth.py`, `POST /api/tools/goal-odds`): Monte Carlo of i.i.d. trades with win
+`1 + f(R·s − c)` and loss `1 − f(s(1+slip) + c)`. Anchor: with zero edge the target is hit before the stop with
+probability `p0 = 1/(1+R)`; the user supplies an edge in percentage points over `p0` and its uncertainty (each
+path draws its own win rate), giving P(goal before floor), P(floor), time-to-goal and the Kelly fraction
+`f* = (pW − qL)/(WL)`. Realistic friction (5 bps, 15 % stop slippage) puts break-even ~3–5 points above chance,
+so the strategy needs a genuine edge to grow; with none, nearly every path ends at the floor.
+
 ## 8. Account tiers — `strategies/presets.py`
 
 | Tier | Equity | Enabled by default | Key risk settings |

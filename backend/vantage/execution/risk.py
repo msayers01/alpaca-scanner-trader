@@ -221,7 +221,11 @@ class RiskManager:
         equity = float(account.get("equity", 0.0))
         if equity <= 0:
             return None, "no equity"
-        kelly = max(0.0, idea.kelly_fraction) * c["kelly_multiplier"] * max(0.0, min(1.0, idea.size_multiplier))
+        mult = max(0.0, min(1.0, idea.size_multiplier))
+        if idea.target_fraction is not None:  # strategy sizes explicitly (e.g. Rags to Riches); caps below still bind
+            kelly = max(0.0, min(1.0, idea.target_fraction)) * mult
+        else:
+            kelly = max(0.0, idea.kelly_fraction) * c["kelly_multiplier"] * mult
         kelly_dollars = equity * kelly
         cap_dollars = equity * c["max_position_pct"]
         risk_budget = equity * c["max_risk_per_trade"]

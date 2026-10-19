@@ -195,6 +195,7 @@ interface CalEvent { id: string; date: string; time: string | null;   // "HH:MM"
 | POST | `/api/autotrader/kill` | `{"flatten": boolean}` | `AutoTraderState` |
 | POST | `/api/autotrader/reset-kill` | — | `AutoTraderState` |
 | POST | `/api/autotrader/cycle` | — | `AutoTraderState` (run one cycle now) |
+| POST | `/api/tools/goal-odds` | `{start, goal, floor, position_frac, stop_frac, reward_r, edge_pp?, edge_sd?, win_rate?, cost_frac?, stop_slippage?, trades_per_day?, max_days?}` | `GoalOdds` (`p_goal, p_floor, p_unresolved, median_trades_to_goal, median_days_to_goal?, win_rate, baseline_win_rate, breakeven_win_rate, p_negative_edge, win_multiplier, loss_multiplier, expectancy_pct, log_growth_per_trade, kelly_fraction, kelly_ratio, max_trades`) |
 | GET | `/api/autotrader/decisions` | `limit` | `Decision[]` |
 
 ```ts
@@ -205,7 +206,10 @@ interface StrategyInfo { id: string; name: string; description: string;
   asset_class: "option" | "equity"; style: "intraday" | "swing"; enabled: boolean;
   use_llm_gate: boolean; params: Record<string, unknown>; schema: ParamSpec[];
   tiers: string[]; stats: { trades: number; win_rate: number | null; pnl: number };
-  backtest: { support: "full" | "synthetic" | "none"; note: string } }
+  backtest: { support: "full" | "synthetic" | "none"; note: string };
+  runtime: { start_equity?: number | null; started_t?: number; halted?: string | null; halted_t?: number | null };
+  extra: Record<string, unknown>  // rags_to_riches: {effective, goal_equity, floor_equity, start_equity, halted}
+}
 interface RiskConfig { kelly_multiplier: number; max_risk_per_trade: number; max_position_pct: number;
   max_open_positions: number; max_per_underlying: number; max_options_allocation: number;
   max_daily_loss: number; max_drawdown: number; max_trades_per_day: number;
@@ -217,7 +221,7 @@ interface AutoTraderState { armed: boolean; running: boolean; killed: boolean;
   kill_reason: string | null; tier: string; risk: RiskConfig; risk_schema: ParamSpec[];
   last_cycle: number | null; cycle_ms: number | null; today: { trades: number; pnl: number };
   presets: { tier: string; label: string; description: string; min_equity: number;
-             max_equity: number | null }[]; }
+             max_equity: number | null; manual?: boolean }[]; }  // manual = never auto-selected (e.g. "rags")
 interface Decision { id: string; t: number; strategy_id: string; symbol: string;
   action: "enter" | "exit" | "skip" | "reject" | "error";
   reason: string; edge_score: number | null; llm: { decision: string; confidence: number;
@@ -262,7 +266,7 @@ interface BacktestResult { strategy_id: string; equity: { t: number; v: number }
 ### Additions (implemented in v1, optional for clients)
 | Method | Path | Body / query | Response |
 |---|---|---|---|
-| POST | `/api/sim/reset` | `{"equity": number}` ($100–$10M) — SIM mode only; resets cash, positions, journal | `Account` |
+| POST | `/api/sim/reset` | `{"equity": number}` ($10–$10M) — SIM mode only; resets cash, positions, journal | `Account` |
 | GET | `/api/signals/models` | — | `{id, name, horizon_days, kind, directional, description, enabled, prior_weight, weight, ic, ic_sd, ic_days, ic_shrunk}[]` |
 
 Extra fields the backend also returns:

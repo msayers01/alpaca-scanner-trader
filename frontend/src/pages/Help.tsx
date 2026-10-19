@@ -12,7 +12,7 @@ const TOC: { id: string; title: string; sub?: { id: string; title: string }[] }[
   { id: "symbol", title: "Symbol page & order ticket", sub: [{ id: "chain", title: "Options chain" }] },
   { id: "scanner", title: "Scanner metrics", sub: [{ id: "ev", title: "EV, PoP, Kelly" }, { id: "ivrank", title: "IV rank & IV/RV" }] },
   { id: "signals", title: "Signal models & ensemble" },
-  { id: "strategies", title: "Preset strategies" },
+  { id: "strategies", title: "Preset strategies", sub: [{ id: "rags", title: "Rags to Riches" }] },
   { id: "tiers", title: "Account tiers" },
   { id: "autotrader", title: "Auto-trader" },
   { id: "risk", title: "Risk parameters" },
@@ -418,6 +418,7 @@ P(up)    = N(E[r_h] / σ_h)
                   ["ETF Pullback Reversion (meanrev_etf)", "equity · swing", "SPY/QQQ/IWM/sector ETFs above SMA200 with RSI(2) < 10 or IBS < 0.2", "Close above the 5-day SMA or 5-day time stop"],
                   ["Opening-Range Breakout (orb_intraday)", "equity/option · intraday", "5-minute ORB on the top relative-volume names, direction of the first candle", "Stop at the opposite side of the range; flat by the close. Skipped only if day trades are disabled in the risk settings."],
                   ["LLM Analyst (llm_analyst)", "option · swing", "Top ensemble names; the LLM gets the full dossier and must approve", "Standard exit policy"],
+                  ["Rags to Riches (rags_to_riches)", "equity/option · intraday · HIGH RISK", "Best of ORB / VWAP pullback / high-low-of-day momentum on leveraged ETFs, in-play names and cheap 0–2 DTE SPY/QQQ options; compounds most of the balance per trade", "R-multiple target, stop, trailing after +1R, max hold, flat by the close; stops at your $ goal or floor"],
                 ].map(([n, a, e, x]) => (
                   <tr key={n}>
                     <td>{n}</td>
@@ -430,6 +431,39 @@ P(up)    = N(E[r_h] / σ_h)
             </table>
             <p>
               Options exits are managed in software by the auto-trader (Alpaca does not support bracket orders for options); equities also get a broker-side stop as a backstop.
+            </p>
+            <h3 id="rags">Rags to Riches (high-risk small-account mode)</h3>
+            <div className="callout danger">
+              This mode is designed to try to grow a very small balance ($20–$50+) quickly. It deliberately puts most of the account into each trade. No strategy can reliably turn
+              $50 into thousands: it takes a long run of wins, and most attempts end at the floor. Use SIM or paper first, read the odds estimator, and only fund it with money you can
+              lose entirely.
+            </div>
+            <p>
+              <strong>How to use it:</strong> on the Auto-trader page apply the <em>Rags to Riches</em> preset (type <kbd>RISK</kbd> to confirm) — it turns on only this strategy and
+              loosens the global caps so the strategy's own sizing applies. Set your <strong>Goal ($)</strong> and <strong>Floor ($)</strong> in its parameters, pick an{" "}
+              <strong>Aggressiveness</strong> (Moderate / Aggressive / All-in, or Custom to tune every knob), then arm the auto-trader. When equity reaches the goal the strategy stops,
+              optionally sells its positions to lock the gain, and hands the account to the normal tier preset for the new balance. If equity falls to the floor it stops and flattens.
+            </p>
+            <p>
+              <strong>What it trades:</strong> intraday, one best setup at a time (configurable up to 3): the opening-range breakout in the direction of the opening drive with
+              relative volume, VWAP trend pullbacks, and new high/low-of-day pushes on a volume surge, filtered by the market's direction (QQQ vs its VWAP). Bullish setups buy
+              leveraged ETFs (TQQQ, SOXL, SPXL, …) or the day's most-active stocks using fractional shares; bearish setups buy the inverse ETF (SQQQ, SOXS, …) or puts. Optional
+              “power plays” buy cheap 0–2 DTE SPY/QQQ calls/puts sized from the balance. Everything is flat by the close unless overnight holds are enabled.
+            </p>
+            <p>
+              <strong>Brakes:</strong> max trades per day, minimum minutes between entries, a daily loss stop, a losing-streak stop, a max hold time and the dollar floor.
+            </p>
+            <p>
+              <strong>Odds estimator</strong> (on the strategy card): simulates 20,000 paths of trades with the active size, stop and target. The key fact it is built on: with no
+              edge, a target R times the stop is hit before the stop only 1/(1+R) of the time (28.6 % for 2.5R). Costs and stop slippage push the break-even win rate a few points
+              higher, so the strategy needs a real edge of several percentage points over chance just to grow. You choose the assumed edge and its uncertainty; once you have 20+
+              trades you can plug in your realised win rate instead. Example ($50 → $1,000 in a year, Aggressive): about a 1-in-4 chance with a strong +5-point edge, and a
+              much higher chance of hitting the floor with none.
+            </p>
+            <p>
+              <strong>Practical notes:</strong> fractional orders need at least $1; options need approval on your account and a contract usually costs $5–$50 at these sizes. If your
+              broker account is a cash account, settled-cash rules apply and the auto-trader respects the buying power the broker reports. This strategy can't be backtested on
+              daily bars.
             </p>
           </Sec>
 

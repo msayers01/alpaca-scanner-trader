@@ -251,6 +251,8 @@ class TradeIdea:
     use_llm_gate: bool = False
     size_multiplier: float = 1.0  # set by LLM gate (<= 1)
     spread_pct: float = 0.0
+    # Strategy-specified position size as a fraction of equity (replaces Kelly x multiplier); hard caps still apply
+    target_fraction: float | None = None
 
     def to_wire(self) -> dict[str, Any]:
         d = {k: getattr(self, k) for k in self.__slots__ if k != "contract"}  # type: ignore[attr-defined]

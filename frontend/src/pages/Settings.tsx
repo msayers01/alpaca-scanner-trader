@@ -113,9 +113,9 @@ function SimReset() {
         </span>
         <div className="input-group" style={{ width: 160 }}>
           <span className="addon">$</span>
-          <NumberInput value={equity} onChange={setEquity} min={100} max={10_000_000} className="input input-num" ariaLabel="Starting equity" />
+          <NumberInput value={equity} onChange={setEquity} min={10} max={10_000_000} className="input input-num" ariaLabel="Starting equity" />
         </div>
-        <button className="btn" onClick={() => setOpen(true)} disabled={!(equity >= 100 && equity <= 10_000_000)}>
+        <button className="btn" onClick={() => setOpen(true)} disabled={!(equity >= 10 && equity <= 10_000_000)}>
           Reset simulator
         </button>
       </div>

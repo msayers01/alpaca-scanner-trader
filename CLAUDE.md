@@ -67,6 +67,7 @@ Production-style single server: `npm run build` then `uv run vantage` serves `fr
 | New WS channel | `backend/vantage/api/ws.py` + API.md + `frontend/src/lib/ws.ts` |
 | Alpaca endpoint | `backend/vantage/broker/alpaca_rest.py` (only place that knows URLs) |
 | Risk rule | `backend/vantage/execution/risk.py` + `tests/test_risk.py` |
+| Strategy-controlled size / goal halt | `TradeIdea.target_fraction`; `Strategy.should_halt()` (see `strategies/rags.py`) |
 | UI page | `frontend/src/pages/` + route in `App.tsx` + nav + Help page section |
 
 ## Gotchas

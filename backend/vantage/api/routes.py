@@ -107,8 +107,8 @@ async def sim_reset(request: Request, body: dict[str, Any] = Body(default={})) -
     if c.mode != "sim":
         return err("not_sim", "only available in SIM mode")
     eq = float(body.get("equity", 10_000))
-    if not 100 <= eq <= 10_000_000:
-        return err("bad_equity", "equity must be between $100 and $10M")
+    if not 10 <= eq <= 10_000_000:
+        return err("bad_equity", "equity must be between $10 and $10M")
     c.store.kv_set("sim", "initial_equity", eq)
     c.store.write("DELETE FROM positions_meta WHERE mode='sim'")
     c.store.write("DELETE FROM journal WHERE mode='sim'")
@@ -116,6 +116,9 @@ async def sim_reset(request: Request, body: dict[str, Any] = Body(default={})) -
     c.autotrader.peak_equity = eq
     c.store.kv_set("sim", "peak_equity", eq)
     c.autotrader.risk.reset_kill()
+    for rt in c.autotrader.runtime.values():  # start balances refer to the old account: re-record next cycle
+        rt.update(start_equity=None, halted=None, halted_t=None)
+    c.store.kv_set("sim", "strategy_runtime", c.autotrader.runtime)
     return J(await c.broker.get_account())
 
 
@@ -438,6 +441,34 @@ async def strategy_update(request: Request, sid: str, body: dict[str, Any] = Bod
     except (ValueError, TypeError) as e:
         return err("bad_params", str(e))
     return J(next(s for s in await at.strategies_wire() if s["id"] == sid))
+
+
+@router.post("/tools/goal-odds")
+async def goal_odds(request: Request, body: dict[str, Any] = Body(...)) -> JSON:
+    """Monte Carlo odds of compounding from `start` to `goal` before `floor` (Rags to Riches odds estimator)."""
+    import asyncio as _asyncio
+
+    from vantage.quant.growth import goal_odds as _odds
+
+    try:
+        args = {k: float(body[k]) for k in ("start", "goal", "floor", "position_frac", "stop_frac", "reward_r")}
+        opt = {k: float(body[k]) for k in ("win_rate", "edge_pp", "edge_sd", "cost_frac", "stop_slippage")
+               if body.get(k) is not None}
+    except (KeyError, TypeError, ValueError):
+        return err("bad_request", "start, goal, floor, position_frac, stop_frac and reward_r are required")
+    tpd = float(body.get("trades_per_day") or 0)
+    days = float(body.get("max_days") or 250)
+    max_trades = int(max(10, min(10_000, tpd * days if tpd > 0 else float(body.get("max_trades", 2000)))))
+    try:
+        res = await _asyncio.to_thread(_odds, **args, **opt, max_trades=max_trades, sims=20_000)
+    except ValueError as e:
+        return err("bad_request", str(e))
+    if tpd > 0:
+        res["trades_per_day"] = tpd
+        res["max_days"] = days
+        if res["median_trades_to_goal"]:
+            res["median_days_to_goal"] = res["median_trades_to_goal"] / tpd
+    return J(res)
 
 
 @router.get("/autotrader")

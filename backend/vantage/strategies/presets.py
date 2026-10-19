@@ -61,15 +61,39 @@ TIERS: list[dict[str, Any]] = [
                        "orb_intraday"],
     },
 ]
+# Manual-only preset (never auto-selected by equity): permissive global caps so the Rags to Riches strategy's own
+# sizing, goal and floor govern the account. Kill switches stay on but far wider.
+TIERS.append({
+    "tier": "rags",
+    "label": "Rags to Riches",
+    "min_equity": 0,
+    "max_equity": None,
+    "manual": True,
+    "description": "High-risk small-account mode: only the Rags to Riches day-trading strategy runs, sizing up to the "
+                   "whole balance per trade until your dollar goal (then it stops) or floor is hit. Most attempts like "
+                   "this lose money — use the odds estimator on the strategy card first.",
+    "fractional": True,
+    "risk": {"kelly_multiplier": 1.0, "max_risk_per_trade": 1.0, "max_position_pct": 1.0,
+             "max_options_allocation": 1.0, "max_open_positions": 3, "max_per_underlying": 1,
+             "max_trades_per_day": 40, "max_new_per_cycle": 1, "max_daily_loss": 0.60, "max_drawdown": 0.95,
+             "allow_daytrades": "auto", "min_edge_score": 0.0, "max_spread_pct": 0.35, "min_open_interest": 0,
+             "min_option_volume": 50, "min_one_contract": True, "entry_start_min": 5, "entry_end_min": 10,
+             "earnings_blackout_days": 0, "cycle_seconds": 15, "aggression": 0.5, "max_aggression": 1.0,
+             "order_timeout_s": 45},
+    "strategies": ["rags_to_riches"],
+})
 TIER_BY_ID = {t["tier"]: t for t in TIERS}
 
 
 def tier_for_equity(equity: float) -> str:
     for t in TIERS:
+        if t.get("manual"):
+            continue
         if equity >= t["min_equity"] and (t["max_equity"] is None or equity < t["max_equity"]):
             return t["tier"]
     return "micro"
 
 
 def presets_wire() -> list[dict[str, Any]]:
-    return [{k: t[k] for k in ("tier", "label", "description", "min_equity", "max_equity")} for t in TIERS]
+    return [{k: t[k] for k in ("tier", "label", "description", "min_equity", "max_equity")} | {"manual": bool(t.get("manual"))}
+            for t in TIERS]

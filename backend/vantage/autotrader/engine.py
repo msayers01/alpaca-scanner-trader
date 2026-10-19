@@ -46,6 +46,8 @@ class AutoTrader:
         self.tier_locked: bool = bool(self.store.kv_get(self.mode, "tier_locked", False))
         self.strategies: dict[str, Strategy] = {}
         self.enabled: dict[str, bool] = {}
+        # per-strategy runtime state (start equity when switched on, halt reason...) — survives restarts
+        self.runtime: dict[str, dict[str, Any]] = self.store.kv_get(self.mode, "strategy_runtime", {}) or {}
         self._load_strategies()
         self.armed = False  # ALWAYS start disarmed
         self.preview = True
@@ -69,6 +71,7 @@ class AutoTrader:
             cfg = saved.get(sid, {})
             s = cls(cfg.get("params"))
             s.use_llm_gate = bool(cfg.get("use_llm_gate", cls.default_llm_gate))
+            s.runtime = self.runtime.setdefault(sid, {})
             self.strategies[sid] = s
             self.enabled[sid] = bool(cfg.get("enabled", sid in tier_defaults))
 
@@ -81,20 +84,33 @@ class AutoTrader:
     def update_strategy(self, sid: str, enabled: bool | None, params: dict[str, Any] | None, use_llm_gate: bool | None) -> None:
         if sid not in self.strategies:
             raise KeyError(sid)
+        self._adopt_tier_preset = False
         s = self.strategies[sid]
         if params:
             new = type(s)({**s.params, **params})
             new.use_llm_gate = s.use_llm_gate
-            if isinstance(s, type(s)) and hasattr(s, "_reviewed"):
-                new._reviewed = s._reviewed  # type: ignore[attr-defined]
+            for k, v in s.__dict__.items():  # carry runtime/private state (review timers, caches)
+                if k.startswith("_") or k == "runtime":
+                    setattr(new, k, v)
             self.strategies[sid] = s = new
         if use_llm_gate is not None:
             s.use_llm_gate = bool(use_llm_gate)
         if enabled is not None:
+            if enabled and not self.enabled.get(sid):
+                self._mark_started(sid)
             self.enabled[sid] = bool(enabled)
         self._save_strategies()
 
+    def _mark_started(self, sid: str) -> None:
+        eq = (self.c.account or {}).get("equity") if getattr(self.c, "account", None) else None
+        rt = self.runtime.setdefault(sid, {})
+        rt.clear()
+        rt.update({"start_equity": eq, "started_t": now_ms(), "halted": None, "halted_t": None})
+        self.strategies[sid].runtime = rt
+        self.store.kv_set(self.mode, "strategy_runtime", self.runtime)
+
     def update_risk(self, values: dict[str, Any]) -> None:
+        self._adopt_tier_preset = False  # the user (or a preset) chose settings: never auto-adopt over them
         self.risk.update(values)
         self.store.kv_set(self.mode, "risk_config", self.risk.cfg)
 
@@ -106,7 +122,10 @@ class AutoTrader:
         self.store.kv_set(self.mode, "tier_locked", True)
         self.update_risk(t["risk"])
         for sid in self.strategies:
-            self.enabled[sid] = sid in t["strategies"]
+            on = sid in t["strategies"]
+            if on and not self.enabled.get(sid):
+                self._mark_started(sid)
+            self.enabled[sid] = on
         self._save_strategies()
 
     async def set_armed(self, armed: bool) -> None:
@@ -185,19 +204,88 @@ class AutoTrader:
             reason = self.risk.check_kill(account, self.peak_equity)
             if reason:
                 await self.kill(reason)
+        metas = await self._metas()
         ctx = StrategyContext(
             mode=self.mode, market=c.market, options=c.options, signals=c.signals, scanner=c.scanner, news=c.news,
             flow=c.flow, calendar=c.calendar, llm=c.llm, account=account, positions=positions, tier=self.tier,
             risk=self.risk.cfg, universe=c.universe(), market_state=ms,
+            owned={s: m["strategy_id"] for s, m in metas.items() if m.get("strategy_id")},
+            today=await self._today_by_strategy(),
         )
+        for sid, rt in self.runtime.items():  # start equity for strategies enabled before equity was known
+            if self.enabled.get(sid) and rt.get("start_equity") is None:
+                rt["start_equity"] = eq
+                rt.setdefault("started_t", now_ms())
+                self.store.kv_set(self.mode, "strategy_runtime", self.runtime)
         if ms.is_open or self.mode == "sim":
             if self.armed or self.manage_exits_when_disarmed:
                 await self._manage(ctx, positions, account)
+        if self.armed:
+            for sid, strat in list(self.strategies.items()):
+                if self.enabled.get(sid):
+                    halt = strat.should_halt(ctx)
+                    if halt:
+                        await self._halt(sid, halt, ctx, positions, eq)
         if self.risk.killed or not (ms.is_open or self.mode == "sim"):
             return
         if not self.armed and not self.preview:
             return
         await self._entries(ctx, account, positions, ms)
+
+    # ------------------------------------------------------------------ per-strategy state
+    async def _today_by_strategy(self) -> dict[str, dict[str, Any]]:
+        """Today's entries (incl. working entry orders), last entry time, realised P&L and current losing streak."""
+        start = clock.to_ms(clock.et_dt(clock.today_et(), clock.time(0, 0)))
+        rows = await self.store.query(
+            "SELECT strategy_id, entry_t, exit_t, pnl FROM journal WHERE mode=? AND (entry_t>=? OR exit_t>=?) "
+            "ORDER BY COALESCE(exit_t, entry_t)", (self.mode, start, start))
+        out: dict[str, dict[str, Any]] = {}
+        for r in rows:
+            st = out.setdefault(r["strategy_id"] or "-", {"entries": 0, "last_entry_t": 0, "realized": 0.0,
+                                                          "closed": 0, "consecutive_losses": 0})
+            if r["entry_t"] and r["entry_t"] >= start:
+                st["entries"] += 1
+                st["last_entry_t"] = max(st["last_entry_t"], r["entry_t"])
+            if r["exit_t"] and r["exit_t"] >= start and r["pnl"] is not None:
+                st["realized"] += r["pnl"]
+                st["closed"] += 1
+                st["consecutive_losses"] = st["consecutive_losses"] + 1 if r["pnl"] < 0 else 0
+        for w in self.exec.working.values():
+            if w.purpose == "entry" and w.status in ("pending", "working") and w.strategy_id:
+                st = out.setdefault(w.strategy_id, {"entries": 0, "last_entry_t": 0, "realized": 0.0, "closed": 0,
+                                                    "consecutive_losses": 0})
+                st["entries"] += 1
+                st["last_entry_t"] = max(st["last_entry_t"], w.created)
+        return out
+
+    async def _halt(self, sid: str, halt: dict[str, Any], ctx: StrategyContext, positions: list[dict[str, Any]],
+                    equity: float) -> None:
+        """Switch a strategy off (goal reached / floor hit), optionally flatten its positions and hand over."""
+        reason = str(halt.get("reason", "halted"))
+        self.enabled[sid] = False
+        rt = self.runtime.setdefault(sid, {})
+        rt.update(halted=reason, halted_t=now_ms(), halted_equity=equity)
+        self.store.kv_set(self.mode, "strategy_runtime", self.runtime)
+        self._save_strategies()
+        self._decide(sid, "-", "skip", f"STRATEGY STOPPED — {reason}")
+        if halt.get("flatten"):
+            for p in positions:
+                if ctx.owned.get(p["symbol"]) != sid or self.exec.is_working(p["symbol"]):
+                    continue
+                qty = p["qty"] if p["asset_class"] != "option" else max(1, int(round(p["qty"])))
+                try:
+                    w = await self.exec.submit(p["symbol"], "sell", qty, p["asset_class"] == "option", "exit", sid,
+                                               urgent=True, meta={"reason": f"flatten: {reason}"},
+                                               ref_price=p["current_price"])
+                    self._decide(sid, p["symbol"], "exit", f"flatten: {reason}", order_id=w.client_id)
+                except Exception as e:  # noqa: BLE001
+                    self._decide(sid, p["symbol"], "error", f"flatten failed: {e}")
+        if halt.get("next_preset"):
+            tier = tier_for_equity(equity)
+            self.apply_preset(tier)
+            self.tier_locked = False
+            self.store.kv_set(self.mode, "tier_locked", False)
+            self._decide("system", "-", "skip", f"handed over to the '{tier}' tier preset for equity ${equity:,.2f}")
 
     # ------------------------------------------------------------------ exits
     async def _metas(self) -> dict[str, dict[str, Any]]:
@@ -492,6 +580,8 @@ class AutoTrader:
                 "tiers": [t for t, cfg in TIER_BY_ID.items() if sid in cfg["strategies"]],
                 "stats": stats.get(sid, {"trades": 0, "win_rate": None, "pnl": 0.0}),
                 "backtest": {"support": s.backtest_support, "note": s.backtest_note},
+                "runtime": s.runtime,
+                "extra": s.extra_info(),
             })
         return out
 

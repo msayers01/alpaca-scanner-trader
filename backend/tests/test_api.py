@@ -188,3 +188,37 @@ def test_websocket_stream(client):
             for item in msg.get("b", []):
                 got.add(item["ch"])
         assert {"quote:AAPL", "account"} <= got
+
+
+def test_rags_to_riches_preset_goal_halt_and_odds(client):
+    """Apply the manual preset, then set a goal below current equity: an armed cycle must stop the strategy,
+    record why, and hand the account to the equity-appropriate tier preset."""
+    at = client.app.state.vs.container.autotrader
+    at._adopt_tier_preset = True  # simulate a fresh mode where the first cycle would auto-adopt a tier preset
+    st = client.post("/api/autotrader/preset", json={"tier": "rags"}).json()
+    assert st["tier"] == "rags" and st["risk"]["max_position_pct"] == 1.0
+    assert at._adopt_tier_preset is False  # a manual preset must never be overwritten by auto-adoption
+    strategies = {s["id"]: s for s in client.get("/api/strategies").json()}
+    assert [sid for sid, s in strategies.items() if s["enabled"]] == ["rags_to_riches"]
+    r2r = strategies["rags_to_riches"]
+    assert r2r["extra"]["effective"]["position_pct"] == 0.70 and r2r["backtest"]["support"] == "none"
+    eq = client.get("/api/account").json()["equity"]
+    client.put("/api/strategies/rags_to_riches", json={"params": {"goal_equity": max(10.0, eq * 0.5),
+                                                                  "floor_equity": 1.0}})
+    client.post("/api/autotrader/arm", json={"armed": True})
+    client.post("/api/autotrader/cycle")
+    after = {s["id"]: s for s in client.get("/api/strategies").json()}["rags_to_riches"]
+    assert after["enabled"] is False and "goal reached" in after["runtime"]["halted"]
+    reasons = [d["reason"] for d in client.get("/api/autotrader/decisions?limit=50").json()]
+    assert any(r.startswith("STRATEGY STOPPED") for r in reasons)
+    assert any("handed over" in r for r in reasons)
+    assert client.get("/api/autotrader").json()["tier"] != "rags"
+    client.post("/api/autotrader/arm", json={"armed": False})
+    odds = client.post("/api/tools/goal-odds", json={"start": 50, "goal": 1000, "floor": 10, "position_frac": 0.7,
+                                                     "stop_frac": 0.02, "reward_r": 2.5, "edge_pp": 0.05,
+                                                     "trades_per_day": 4, "max_days": 100}).json()
+    assert 0 <= odds["p_goal"] <= 1 and abs(odds["p_goal"] + odds["p_floor"] + odds["p_unresolved"] - 1) < 1e-9
+    assert odds["baseline_win_rate"] == 1 / 3.5 and odds["max_trades"] == 400
+    bad = client.post("/api/tools/goal-odds", json={"start": 50, "goal": 40, "floor": 10, "position_frac": 0.5,
+                                                    "stop_frac": 0.02, "reward_r": 2})
+    assert bad.status_code == 400

@@ -17,6 +17,7 @@ import { diffParams, ParamForm, type ParamValues } from "../components/ui/ParamF
 import { Empty, ErrorBox, Loading, Switch, Tip } from "../components/ui/States";
 import { Icon } from "../components/ui/Icon";
 import { toast } from "../components/ui/Toast";
+import { RagsPanel } from "../components/RagsPanel";
 
 const AUTO_PRESET: TierPreset = {
   tier: "auto",
@@ -65,10 +66,10 @@ function PresetPicker({ presets, current, tierLocked }: { presets: TierPreset[];
               <div className="title">
                 {p.label}
                 {p.tier === current && <span className="badge accent">{autoActive ? "auto" : "active"}</span>}
-                {fits && p.tier !== current && <span className="badge outline">fits equity</span>}
+                {p.manual ? <span className="badge danger">high risk</span> : fits && p.tier !== current && <span className="badge outline">fits equity</span>}
               </div>
               <div className="xsmall faint num">
-                {fmtUsd(p.min_equity, { decimals: 0 })} – {p.max_equity === null ? "∞" : fmtUsd(p.max_equity, { decimals: 0 })}
+                {p.manual ? "Manual · any balance" : `${fmtUsd(p.min_equity, { decimals: 0 })} – ${p.max_equity === null ? "∞" : fmtUsd(p.max_equity, { decimals: 0 })}`}
               </div>
               <div className="desc">{p.description}</div>
             </button>
@@ -79,6 +80,7 @@ function PresetPicker({ presets, current, tierLocked }: { presets: TierPreset[];
         <ConfirmDialog
           title={`Apply the ${pending.label} preset?`}
           confirmLabel="Apply preset"
+          typeToConfirm={pending.manual ? "RISK" : undefined}
           onClose={() => setPending(null)}
           onConfirm={async () => {
             try {
@@ -235,6 +237,7 @@ const StrategyCard = memo(function StrategyCard({ s, onUpdated }: { s: StrategyI
           <Switch checked={s.enabled} disabled={busy} onChange={(v) => void put({ enabled: v }, `${s.name} ${v ? "enabled" : "disabled"}`)} label={s.enabled ? "On" : "Off"} />
         </div>
         <div className="desc">{s.description}</div>
+        {s.id === "rags_to_riches" && <RagsPanel s={s} />}
         <div className="row-wrap" style={{ marginTop: 12, gap: 16 }}>
           <Switch
             checked={s.use_llm_gate}
